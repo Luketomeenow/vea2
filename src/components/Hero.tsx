@@ -2,8 +2,11 @@ import { Button } from "@/components/ui/button";
 import { ArrowRight, Star, Users, TrendingUp } from "lucide-react";
 import dashboardHero from "@/assets/vea-dashboard-hero.jpg";
 import ParticleBackground from "./ParticleBackground";
+import { useNavigate } from "react-router-dom";
 
 const Hero = () => {
+  const navigate = useNavigate();
+  
   return (
     <section className="relative min-h-screen flex items-center pt-16 overflow-hidden">
       {/* Enhanced Background */}
@@ -59,7 +62,11 @@ const Hero = () => {
 
             {/* CTAs */}
             <div className="flex flex-col sm:flex-row gap-4 justify-center lg:justify-start">
-              <Button size="lg" className="cta-primary group text-lg px-8 py-4 shadow-strong hover:shadow-strong focus-visible:ring-offset-2">
+              <Button 
+                size="lg" 
+                className="cta-primary group text-lg px-8 py-4 shadow-strong hover:shadow-strong focus-visible:ring-offset-2"
+                onClick={() => navigate('/signup')}
+              >
                 Start Your Free Trial
                 <ArrowRight className="ml-2 w-5 h-5 group-hover:translate-x-1 transition-transform" />
               </Button>
@@ -67,6 +74,7 @@ const Hero = () => {
                 size="lg" 
                 variant="outline" 
                 className="border-primary/40 text-foreground hover:bg-primary/10 hover:text-foreground backdrop-blur-sm text-lg px-8 py-4 shadow-soft focus-visible:ring-offset-2"
+                onClick={() => document.getElementById('features')?.scrollIntoView({ behavior: 'smooth' })}
               >
                 Watch Demo
               </Button>

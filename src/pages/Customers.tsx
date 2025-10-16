@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { DashboardLayout } from "@/components/DashboardLayout";
-import { Plus, Search, Mail, Phone, MapPin, Building, Edit, Trash2, Eye } from "lucide-react";
+import { Plus, Search, Mail, Phone, MapPin, Building, Edit, Trash2, Eye, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -9,58 +9,26 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { useToast } from "@/hooks/use-toast";
-
-interface Customer {
-  id: string;
-  name: string;
-  email: string;
-  phone: string;
-  company: string;
-  address: string;
-  status: "active" | "inactive" | "prospect";
-  lastContact: string;
-  totalRevenue: number;
-}
+import { toast } from "sonner";
+import { useAuth } from "@/hooks/useAuth";
+import { getCustomers, createCustomer, updateCustomer, deleteCustomer, Customer } from "@/services/customersService";
 
 const Customers = () => {
-  const { toast } = useToast();
-  const [customers, setCustomers] = useState<Customer[]>([
-    {
-      id: "1",
-      name: "John Smith",
-      email: "john.smith@techcorp.com",
-      phone: "+1 (555) 123-4567",
-      company: "TechCorp Solutions",
-      address: "123 Business Ave, San Francisco, CA",
-      status: "active",
-      lastContact: "2024-01-10",
-      totalRevenue: 45000
-    },
-    {
-      id: "2",
-      name: "Sarah Johnson",
-      email: "sarah@innovate.io",
-      phone: "+1 (555) 987-6543",
-      company: "Innovate Industries",
-      address: "456 Innovation St, Seattle, WA",
-      status: "active",
-      lastContact: "2024-01-08",
-      totalRevenue: 32000
-    },
-    {
-      id: "3",
-      name: "Michael Brown",
-      email: "m.brown@startup.com",
-      phone: "+1 (555) 456-7890",
-      company: "StartupCo",
-      address: "789 Venture Blvd, Austin, TX",
-      status: "prospect",
-      lastContact: "2024-01-05",
-      totalRevenue: 0
-    }
-  ]);
-
+  const { user } = useAuth();
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [loading, setLoading] = useState(true);
+  
+  useEffect(() => {
+    const fetchCustomers = async () => {
+      if (!user?.id) return;
+      setLoading(true);
+      const data = await getCustomers(user.id);
+      setCustomers(data);
+      setLoading(false);
+    };
+    fetchCustomers();
+  }, [user?.id]);
+  
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -69,57 +37,75 @@ const Customers = () => {
     email: string;
     phone: string;
     company: string;
-    address: string;
-    status: "active" | "inactive" | "prospect";
+    city: string;
+    state: string;
+    country: string;
+    customer_type: "individual" | "business";
+    status: "active" | "inactive" | "lead" | "prospect";
   }>({
     name: "",
     email: "",
     phone: "",
     company: "",
-    address: "",
+    city: "",
+    state: "",
+    country: "USA",
+    customer_type: "business",
     status: "prospect"
   });
 
   const filteredCustomers = customers.filter(customer => {
     const matchesSearch = customer.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         customer.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         customer.company.toLowerCase().includes(searchTerm.toLowerCase());
+                         customer.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         customer.company?.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesStatus = statusFilter === "all" || customer.status === statusFilter;
     return matchesSearch && matchesStatus;
   });
 
-  const handleCreateCustomer = () => {
-    if (!newCustomer.name.trim() || !newCustomer.email.trim()) return;
+  const handleCreateCustomer = async () => {
+    if (!newCustomer.name.trim() || !newCustomer.email.trim() || !user?.id) return;
     
-    const customer: Customer = {
-      id: Date.now().toString(),
-      ...newCustomer,
-      lastContact: new Date().toISOString().split('T')[0],
-      totalRevenue: 0
-    };
-    
-    setCustomers([...customers, customer]);
-    setNewCustomer({
-      name: "",
-      email: "",
-      phone: "",
-      company: "",
-      address: "",
-      status: "prospect"
-    });
-    setIsDialogOpen(false);
-    toast({
-      title: "Customer added",
-      description: "New customer has been added successfully"
-    });
+    try {
+      const createdCustomer = await createCustomer(user.id, newCustomer);
+      
+      if (createdCustomer) {
+        setCustomers([createdCustomer, ...customers]);
+        setNewCustomer({
+          name: "",
+          email: "",
+          phone: "",
+          company: "",
+          city: "",
+          state: "",
+          country: "USA",
+          customer_type: "business",
+          status: "prospect"
+        });
+        setIsDialogOpen(false);
+        toast.success("Customer added successfully");
+      } else {
+        toast.error("Failed to add customer");
+      }
+    } catch (error) {
+      console.error('Error creating customer:', error);
+      toast.error("Failed to add customer");
+    }
   };
 
-  const handleDeleteCustomer = (customerId: string) => {
-    setCustomers(customers.filter(customer => customer.id !== customerId));
-    toast({
-      title: "Customer deleted",
-      description: "Customer has been removed successfully"
-    });
+  const handleDeleteCustomer = async (customerId: string) => {
+    try {
+      const success = await deleteCustomer(customerId);
+      
+      if (success) {
+        setCustomers(customers.filter(customer => customer.id !== customerId));
+        toast.success("Customer deleted successfully");
+      } else {
+        toast.error("Failed to delete customer");
+      }
+    } catch (error) {
+      console.error('Error deleting customer:', error);
+      toast.error("Failed to delete customer");
+    }
   };
 
   const getStatusColor = (status: string) => {
@@ -258,8 +244,26 @@ const Customers = () => {
         </div>
 
         {/* Customer Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {filteredCustomers.map((customer) => (
+        {loading ? (
+          <div className="flex items-center justify-center py-12">
+            <div className="text-center space-y-3">
+              <Loader2 className="w-12 h-12 animate-spin mx-auto text-primary" />
+              <p className="text-muted-foreground">Loading customers...</p>
+            </div>
+          </div>
+        ) : filteredCustomers.length === 0 ? (
+          <Card className="col-span-full text-center py-12">
+            <CardContent>
+              <p className="text-muted-foreground">
+                {searchTerm || statusFilter !== "all" 
+                  ? "No customers found matching your criteria" 
+                  : "No customers yet. Add your first customer to get started!"}
+              </p>
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {filteredCustomers.map((customer) => (
             <Card key={customer.id} className="transition-all hover:shadow-md">
               <CardHeader className="pb-3">
                 <div className="flex items-center justify-between">
@@ -303,12 +307,12 @@ const Customers = () => {
                 
                 <div className="pt-3 border-t">
                   <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">Total Revenue:</span>
-                    <span className="font-medium">${customer.totalRevenue.toLocaleString()}</span>
+                    <span className="text-muted-foreground">Type:</span>
+                    <span className="font-medium capitalize">{customer.customer_type}</span>
                   </div>
                   <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">Last Contact:</span>
-                    <span>{new Date(customer.lastContact).toLocaleDateString()}</span>
+                    <span className="text-muted-foreground">Added:</span>
+                    <span>{new Date(customer.created_at).toLocaleDateString()}</span>
                   </div>
                 </div>
                 
@@ -330,14 +334,7 @@ const Customers = () => {
               </CardContent>
             </Card>
           ))}
-        </div>
-
-        {filteredCustomers.length === 0 && (
-          <Card className="text-center py-12">
-            <CardContent>
-              <p className="text-muted-foreground">No customers found matching your criteria</p>
-            </CardContent>
-          </Card>
+          </div>
         )}
       </div>
     </DashboardLayout>

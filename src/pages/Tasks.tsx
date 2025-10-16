@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { DashboardLayout } from "@/components/DashboardLayout";
-import { Plus, Search, Calendar, Tag, CheckCircle2, Circle, Trash2, Edit } from "lucide-react";
+import { Plus, Search, Calendar, Tag, CheckCircle2, Circle, Trash2, Edit, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -9,119 +9,125 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { useToast } from "@/hooks/use-toast";
-
-interface Task {
-  id: string;
-  title: string;
-  description: string;
-  status: "pending" | "in-progress" | "completed";
-  priority: "low" | "medium" | "high";
-  dueDate: string;
-  assignee: string;
-}
+import { toast } from "sonner";
+import { useAuth } from "@/hooks/useAuth";
+import { getTasks, createTask, updateTask, deleteTask, toggleTaskStatus, TaskWithProject } from "@/services/tasksService";
 
 const Tasks = () => {
-  const { toast } = useToast();
-  const [tasks, setTasks] = useState<Task[]>([
-    {
-      id: "1",
-      title: "Update quarterly financial reports",
-      description: "Compile and review Q3 financial data for board presentation",
-      status: "in-progress",
-      priority: "high",
-      dueDate: "2024-01-15",
-      assignee: "Sarah Chen"
-    },
-    {
-      id: "2", 
-      title: "Client onboarding process review",
-      description: "Review and optimize the client onboarding workflow",
-      status: "pending",
-      priority: "medium",
-      dueDate: "2024-01-20",
-      assignee: "Mike Johnson"
-    },
-    {
-      id: "3",
-      title: "Website performance optimization",
-      description: "Improve page load times and user experience",
-      status: "completed",
-      priority: "medium",
-      dueDate: "2024-01-10",
-      assignee: "Alex Rivera"
-    }
-  ]);
-
+  const { user } = useAuth();
+  const [tasks, setTasks] = useState<TaskWithProject[]>([]);
+  const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [newTask, setNewTask] = useState<{
     title: string;
     description: string;
-    status: "pending" | "in-progress" | "completed";
-    priority: "low" | "medium" | "high";
-    dueDate: string;
-    assignee: string;
+    status: "todo" | "in_progress" | "review" | "done" | "blocked";
+    priority: "low" | "medium" | "high" | "urgent";
+    due_date: string;
+    project_id: string;
   }>({
     title: "",
     description: "",
-    status: "pending",
+    status: "todo",
     priority: "medium",
-    dueDate: "",
-    assignee: ""
+    due_date: "",
+    project_id: "",
   });
+
+  useEffect(() => {
+    const fetchTasks = async () => {
+      if (!user?.id) return;
+
+      setLoading(true);
+      try {
+        const tasksData = await getTasks(user.id);
+        setTasks(tasksData);
+      } catch (error) {
+        console.error('Error fetching tasks:', error);
+        toast.error('Failed to load tasks');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchTasks();
+  }, [user?.id]);
 
   const filteredTasks = tasks.filter(task => {
     const matchesSearch = task.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         task.description.toLowerCase().includes(searchTerm.toLowerCase());
+                         task.description?.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesStatus = statusFilter === "all" || task.status === statusFilter;
     return matchesSearch && matchesStatus;
   });
 
-  const handleCreateTask = () => {
-    if (!newTask.title.trim()) return;
+  const handleCreateTask = async () => {
+    if (!newTask.title.trim() || !user?.id) return;
     
-    const task: Task = {
-      id: Date.now().toString(),
-      ...newTask
-    };
-    
-    setTasks([...tasks, task]);
-    setNewTask({
-      title: "",
-      description: "",
-      status: "pending",
-      priority: "medium",
-      dueDate: "",
-      assignee: ""
-    });
-    setIsDialogOpen(false);
-    toast({
-      title: "Task created",
-      description: "New task has been added successfully"
-    });
+    try {
+      const createdTask = await createTask(user.id, newTask);
+      
+      if (createdTask) {
+        setTasks([createdTask, ...tasks]);
+        setNewTask({
+          title: "",
+          description: "",
+          status: "todo",
+          priority: "medium",
+          due_date: "",
+          project_id: "",
+        });
+        setIsDialogOpen(false);
+        toast.success("Task created successfully");
+      } else {
+        toast.error("Failed to create task");
+      }
+    } catch (error) {
+      console.error('Error creating task:', error);
+      toast.error("Failed to create task");
+    }
   };
 
-  const handleStatusToggle = (taskId: string) => {
-    setTasks(tasks.map(task => 
-      task.id === taskId 
-        ? { ...task, status: task.status === "completed" ? "pending" : "completed" as const }
-        : task
-    ));
+  const handleStatusToggle = async (taskId: string, currentStatus: string) => {
+    try {
+      const success = await toggleTaskStatus(taskId, currentStatus);
+      
+      if (success) {
+        setTasks(tasks.map(task => 
+          task.id === taskId 
+            ? { ...task, status: currentStatus === 'done' ? 'todo' : 'done' as const, completed_at: currentStatus === 'done' ? null : new Date().toISOString() }
+            : task
+        ));
+        toast.success("Task status updated");
+      } else {
+        toast.error("Failed to update task");
+      }
+    } catch (error) {
+      console.error('Error toggling task status:', error);
+      toast.error("Failed to update task");
+    }
   };
 
-  const handleDeleteTask = (taskId: string) => {
-    setTasks(tasks.filter(task => task.id !== taskId));
-    toast({
-      title: "Task deleted",
-      description: "Task has been removed successfully"
-    });
+  const handleDeleteTask = async (taskId: string) => {
+    try {
+      const success = await deleteTask(taskId);
+      
+      if (success) {
+        setTasks(tasks.filter(task => task.id !== taskId));
+        toast.success("Task deleted successfully");
+      } else {
+        toast.error("Failed to delete task");
+      }
+    } catch (error) {
+      console.error('Error deleting task:', error);
+      toast.error("Failed to delete task");
+    }
   };
 
   const getPriorityColor = (priority: string) => {
     switch (priority) {
+      case "urgent": return "destructive";
       case "high": return "destructive";
       case "medium": return "secondary";
       case "low": return "outline";
@@ -131,11 +137,18 @@ const Tasks = () => {
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case "completed": return "default";
-      case "in-progress": return "secondary";
-      case "pending": return "outline";
+      case "done": return "default";
+      case "in_progress": return "secondary";
+      case "review": return "secondary";
+      case "todo": return "outline";
+      case "blocked": return "destructive";
       default: return "outline";
     }
+  };
+
+  const formatDate = (dateString: string | null) => {
+    if (!dateString) return null;
+    return new Date(dateString).toLocaleDateString();
   };
 
   return (
@@ -203,19 +216,10 @@ const Tasks = () => {
                     <Input
                       id="dueDate"
                       type="date"
-                      value={newTask.dueDate}
-                      onChange={(e) => setNewTask({...newTask, dueDate: e.target.value})}
+                      value={newTask.due_date}
+                      onChange={(e) => setNewTask({...newTask, due_date: e.target.value})}
                     />
                   </div>
-                </div>
-                <div>
-                  <Label htmlFor="assignee">Assignee</Label>
-                  <Input
-                    id="assignee"
-                    value={newTask.assignee}
-                    onChange={(e) => setNewTask({...newTask, assignee: e.target.value})}
-                    placeholder="Assign to"
-                  />
                 </div>
               </div>
               <DialogFooter>
@@ -253,81 +257,98 @@ const Tasks = () => {
         </div>
 
         {/* Tasks List */}
-        <div className="grid gap-4">
-          {filteredTasks.map((task) => (
-            <Card key={task.id} className="transition-all hover:shadow-md">
-              <CardHeader className="pb-3">
-                <div className="flex items-start justify-between">
-                  <div className="flex items-center space-x-3">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => handleStatusToggle(task.id)}
-                      className="p-0 h-auto"
-                    >
-                      {task.status === "completed" ? (
-                        <CheckCircle2 className="h-5 w-5 text-primary" />
-                      ) : (
-                        <Circle className="h-5 w-5 text-muted-foreground" />
-                      )}
-                    </Button>
-                    <div>
-                      <CardTitle className={`text-lg ${task.status === "completed" ? "line-through text-muted-foreground" : ""}`}>
-                        {task.title}
-                      </CardTitle>
-                      <CardDescription className="mt-1">
-                        {task.description}
-                      </CardDescription>
-                    </div>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <Button variant="ghost" size="sm">
-                      <Edit className="h-4 w-4" />
-                    </Button>
-                    <Button 
-                      variant="ghost" 
-                      size="sm"
-                      onClick={() => handleDeleteTask(task.id)}
-                    >
-                      <Trash2 className="h-4 w-4 text-destructive" />
-                    </Button>
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent className="pt-0">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-4">
-                    <Badge variant={getPriorityColor(task.priority)}>
-                      <Tag className="h-3 w-3 mr-1" />
-                      {task.priority}
-                    </Badge>
-                    <Badge variant={getStatusColor(task.status)}>
-                      {task.status}
-                    </Badge>
-                    {task.assignee && (
-                      <span className="text-sm text-muted-foreground">
-                        Assigned to: {task.assignee}
-                      </span>
-                    )}
-                  </div>
-                  {task.dueDate && (
-                    <div className="flex items-center text-sm text-muted-foreground">
-                      <Calendar className="h-4 w-4 mr-1" />
-                      {new Date(task.dueDate).toLocaleDateString()}
-                    </div>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-
-        {filteredTasks.length === 0 && (
+        {loading ? (
+          <div className="flex items-center justify-center py-12">
+            <div className="text-center space-y-3">
+              <Loader2 className="w-12 h-12 animate-spin mx-auto text-primary" />
+              <p className="text-muted-foreground">Loading tasks...</p>
+            </div>
+          </div>
+        ) : filteredTasks.length === 0 ? (
           <Card className="text-center py-12">
             <CardContent>
-              <p className="text-muted-foreground">No tasks found matching your criteria</p>
+              <p className="text-muted-foreground">
+                {searchTerm || statusFilter !== "all" 
+                  ? "No tasks found matching your criteria" 
+                  : "No tasks yet. Create your first task to get started!"}
+              </p>
             </CardContent>
           </Card>
+        ) : (
+          <div className="grid gap-4">
+            {filteredTasks.map((task) => (
+              <Card key={task.id} className="transition-all hover:shadow-md">
+                <CardHeader className="pb-3">
+                  <div className="flex items-start justify-between">
+                    <div className="flex items-center space-x-3">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleStatusToggle(task.id, task.status)}
+                        className="p-0 h-auto"
+                      >
+                        {task.status === "done" ? (
+                          <CheckCircle2 className="h-5 w-5 text-primary" />
+                        ) : (
+                          <Circle className="h-5 w-5 text-muted-foreground" />
+                        )}
+                      </Button>
+                      <div>
+                        <CardTitle className={`text-lg ${task.status === "done" ? "line-through text-muted-foreground" : ""}`}>
+                          {task.title}
+                        </CardTitle>
+                        <CardDescription className="mt-1">
+                          {task.description}
+                        </CardDescription>
+                        {task.project_name && (
+                          <p className="text-xs text-muted-foreground mt-1">
+                            Project: {task.project_name}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <Button 
+                        variant="ghost" 
+                        size="sm"
+                        onClick={() => handleDeleteTask(task.id)}
+                      >
+                        <Trash2 className="h-4 w-4 text-destructive" />
+                      </Button>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent className="pt-0">
+                  <div className="flex items-center justify-between flex-wrap gap-2">
+                    <div className="flex items-center space-x-4 flex-wrap gap-2">
+                      <Badge variant={getPriorityColor(task.priority)}>
+                        <Tag className="h-3 w-3 mr-1" />
+                        {task.priority}
+                      </Badge>
+                      <Badge variant={getStatusColor(task.status)}>
+                        {task.status.replace('_', ' ')}
+                      </Badge>
+                      {task.tags && task.tags.length > 0 && (
+                        <div className="flex gap-1">
+                          {task.tags.slice(0, 2).map((tag, index) => (
+                            <Badge key={index} variant="outline" className="text-xs">
+                              {tag}
+                            </Badge>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    {task.due_date && (
+                      <div className="flex items-center text-sm text-muted-foreground">
+                        <Calendar className="h-4 w-4 mr-1" />
+                        {formatDate(task.due_date)}
+                      </div>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
         )}
       </div>
     </DashboardLayout>

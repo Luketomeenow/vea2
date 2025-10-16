@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -9,43 +9,15 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Badge } from "@/components/ui/badge";
-import { Bell, CheckCircle, AlertTriangle, Info } from "lucide-react";
-
-interface Notification {
-  id: string;
-  type: 'success' | 'warning' | 'info';
-  title: string;
-  message: string;
-  time: string;
-  read: boolean;
-}
-
-const mockNotifications: Notification[] = [
-  {
-    id: '1',
-    type: 'warning',
-    title: 'Project Deadline',
-    message: 'Website redesign project due in 2 days',
-    time: '2h ago',
-    read: false,
-  },
-  {
-    id: '2',
-    type: 'success',
-    title: 'Payment Received',
-    message: '$5,000 payment from ABC Corp received',
-    time: '4h ago',
-    read: false,
-  },
-  {
-    id: '3',
-    type: 'info',
-    title: 'New Message',
-    message: 'Client sent feedback on latest proposal',
-    time: '1d ago',
-    read: true,
-  },
-];
+import { Bell, CheckCircle, AlertTriangle, Info, AlertCircle } from "lucide-react";
+import { useAuth } from "@/hooks/useAuth";
+import { 
+  getNotifications, 
+  markNotificationAsRead, 
+  markAllNotificationsAsRead,
+  type Notification as NotificationType
+} from "@/services/notificationsService";
+import { formatDistanceToNow } from "date-fns";
 
 const getNotificationIcon = (type: string) => {
   switch (type) {
@@ -55,23 +27,60 @@ const getNotificationIcon = (type: string) => {
       return <AlertTriangle className="h-4 w-4 text-yellow-500" />;
     case 'info':
       return <Info className="h-4 w-4 text-blue-500" />;
+    case 'error':
+      return <AlertCircle className="h-4 w-4 text-red-500" />;
     default:
       return <Info className="h-4 w-4" />;
   }
 };
 
 export function NotificationDropdown() {
-  const [notifications, setNotifications] = useState(mockNotifications);
+  const { user } = useAuth();
+  const [notifications, setNotifications] = useState<NotificationType[]>([]);
+  const [loading, setLoading] = useState(true);
   const unreadCount = notifications.filter(n => !n.read).length;
 
-  const markAsRead = (id: string) => {
-    setNotifications(prev => 
-      prev.map(n => n.id === id ? { ...n, read: true } : n)
-    );
+  useEffect(() => {
+    if (user?.id) {
+      fetchNotifications();
+    }
+  }, [user?.id]);
+
+  const fetchNotifications = async () => {
+    if (!user?.id) return;
+    
+    setLoading(true);
+    const data = await getNotifications(user.id);
+    setNotifications(data);
+    setLoading(false);
   };
 
-  const markAllAsRead = () => {
-    setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+  const markAsRead = async (id: string) => {
+    const success = await markNotificationAsRead(id);
+    if (success) {
+      setNotifications(prev => 
+        prev.map(n => n.id === id ? { ...n, read: true } : n)
+      );
+    }
+  };
+
+  const markAllAsRead = async () => {
+    if (!user?.id) return;
+    
+    const success = await markAllNotificationsAsRead(user.id);
+    if (success) {
+      setNotifications(prev => 
+        prev.map(n => ({ ...n, read: true }))
+      );
+    }
+  };
+
+  const formatTime = (timestamp: string) => {
+    try {
+      return formatDistanceToNow(new Date(timestamp), { addSuffix: true });
+    } catch {
+      return 'Recently';
+    }
   };
 
   return (
@@ -105,9 +114,15 @@ export function NotificationDropdown() {
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
         
-        {notifications.length === 0 ? (
+        {loading ? (
           <DropdownMenuItem disabled>
-            <div className="flex flex-col items-center py-4">
+            <div className="flex flex-col items-center py-4 w-full">
+              <p className="text-sm text-muted-foreground">Loading...</p>
+            </div>
+          </DropdownMenuItem>
+        ) : notifications.length === 0 ? (
+          <DropdownMenuItem disabled>
+            <div className="flex flex-col items-center py-4 w-full">
               <Bell className="h-8 w-8 text-muted-foreground mb-2" />
               <p className="text-sm text-muted-foreground">No notifications</p>
             </div>
@@ -128,7 +143,7 @@ export function NotificationDropdown() {
                   )}
                 </div>
                 <p className="text-xs text-muted-foreground">{notification.message}</p>
-                <p className="text-xs text-muted-foreground">{notification.time}</p>
+                <p className="text-xs text-muted-foreground">{formatTime(notification.created_at)}</p>
               </div>
             </DropdownMenuItem>
           ))

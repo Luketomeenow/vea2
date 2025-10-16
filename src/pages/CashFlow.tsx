@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -12,12 +12,29 @@ import {
   Download,
   Filter,
   PlusCircle,
-  MinusCircle
+  MinusCircle,
+  Loader2
 } from "lucide-react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import { useAuth } from "@/hooks/useAuth";
+import { getCashFlowEntries, getCashFlowSummary } from "@/services/cashFlowService";
 
 const CashFlow = () => {
+  const { user } = useAuth();
+  const [loading, setLoading] = useState(true);
+  const [summary, setSummary] = useState({ totalIncome: 0, totalExpenses: 0, netCashFlow: 0 });
   const [selectedPeriod, setSelectedPeriod] = useState("3months");
+
+  useEffect(() => {
+    const fetchData = async () => {
+      if (!user?.id) return;
+      setLoading(true);
+      const sum = await getCashFlowSummary(user.id);
+      if (sum) setSummary(sum);
+      setLoading(false);
+    };
+    fetchData();
+  }, [user?.id]);
 
   const cashFlowData = [
     { month: 'Jan', income: 45000, expenses: 32000, netFlow: 13000, projected: false },
@@ -28,10 +45,10 @@ const CashFlow = () => {
     { month: 'Jun', income: 62000, expenses: 38000, netFlow: 24000, projected: true },
   ];
 
-  const currentCashPosition = 85000;
-  const projectedCashEnd = 142000;
-  const cashBurnRate = 35000;
-  const runwayMonths = Math.floor(currentCashPosition / cashBurnRate);
+  const currentCashPosition = summary.netCashFlow;
+  const projectedCashEnd = summary.netCashFlow + 57000; // Mock projection
+  const cashBurnRate = summary.totalExpenses / 12; // Monthly avg
+  const runwayMonths = cashBurnRate > 0 ? Math.floor(currentCashPosition / cashBurnRate) : 0;
 
   const upcomingInflows = [
     { client: "TechCorp Solutions", amount: 25000, date: "2024-01-20", confidence: "high" },
@@ -69,6 +86,15 @@ const CashFlow = () => {
   return (
     <DashboardLayout>
       <div className="space-y-6">
+        {loading ? (
+          <div className="flex items-center justify-center py-12">
+            <div className="text-center space-y-3">
+              <Loader2 className="w-12 h-12 animate-spin mx-auto text-primary" />
+              <p className="text-muted-foreground">Loading cash flow data...</p>
+            </div>
+          </div>
+        ) : (
+          <>
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-3">
             <div className="p-2 bg-gradient-primary rounded-lg">
@@ -258,6 +284,8 @@ const CashFlow = () => {
             </CardContent>
           </Card>
         </div>
+        </>
+        )}
       </div>
     </DashboardLayout>
   );

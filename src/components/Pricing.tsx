@@ -1,7 +1,10 @@
 import { Button } from "@/components/ui/button";
 import { Check, Zap, Crown, Rocket, Sparkles } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 
 const Pricing = () => {
+  const navigate = useNavigate();
+  
   return (
     <section id="pricing" className="py-24 bg-background">
       <div className="container mx-auto px-4 sm:px-6">
@@ -96,7 +99,10 @@ const Pricing = () => {
                         </div>
                       ))}
                     </div>
-                    <Button className="cta-primary w-full mt-8 group py-4 text-lg font-semibold">
+                    <Button 
+                      className="cta-primary w-full mt-8 group py-4 text-lg font-semibold"
+                      onClick={() => plan.popular ? navigate('/signup') : window.location.href = 'mailto:sales@vea.com'}
+                    >
                       <Rocket className="w-5 h-5 mr-2 group-hover:translate-x-1 transition-transform" />
                       {plan.popular ? 'Start Your Free Trial' : 'Contact Sales'}
                     </Button>

@@ -1,48 +1,110 @@
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer } from "recharts";
-
-const taskData = [
-  { day: "Mon", completed: 12, pending: 5 },
-  { day: "Tue", completed: 8, pending: 3 },
-  { day: "Wed", completed: 15, pending: 7 },
-  { day: "Thu", completed: 10, pending: 4 },
-  { day: "Fri", completed: 18, pending: 2 },
-  { day: "Sat", completed: 6, pending: 1 },
-  { day: "Sun", completed: 4, pending: 0 },
-];
+import { PieChart, Pie, Cell, ResponsiveContainer, Legend } from "recharts";
+import { Loader2 } from "lucide-react";
+import { useAuth } from "@/hooks/useAuth";
+import { getTaskStats } from "@/services/dashboardService";
 
 const chartConfig = {
-  completed: {
-    label: "Completed",
-    color: "hsl(var(--primary))",
+  todo: {
+    label: "To Do",
+    color: "#94A3B8",
   },
-  pending: {
-    label: "Pending",
-    color: "hsl(var(--destructive))",
+  in_progress: {
+    label: "In Progress",
+    color: "#3B82F6",
+  },
+  review: {
+    label: "Review",
+    color: "#F59E0B",
+  },
+  done: {
+    label: "Done",
+    color: "#10B981",
+  },
+  blocked: {
+    label: "Blocked",
+    color: "#EF4444",
   },
 };
 
+const COLORS: Record<string, string> = {
+  todo: '#94A3B8',
+  in_progress: '#3B82F6',
+  review: '#F59E0B',
+  done: '#10B981',
+  blocked: '#EF4444',
+};
+
 export function TaskCompletionChart() {
+  const { user } = useAuth();
+  const [loading, setLoading] = useState(true);
+  const [taskData, setTaskData] = useState<Array<{ name: string; value: number; status: string }>>([]);
+
+  useEffect(() => {
+    const fetchTaskStats = async () => {
+      if (!user?.id) return;
+
+      setLoading(true);
+      const data = await getTaskStats(user.id);
+      
+      // Transform data for pie chart
+      const chartData = data.map(item => ({
+        name: chartConfig[item.status as keyof typeof chartConfig]?.label || item.status,
+        value: item.count,
+        status: item.status,
+      }));
+      
+      setTaskData(chartData);
+      setLoading(false);
+    };
+
+    fetchTaskStats();
+  }, [user?.id]);
+
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-white">Task Completion</CardTitle>
-        <CardDescription className="text-white/70">Daily task completion vs pending</CardDescription>
+        <CardTitle className="text-white">Task Distribution</CardTitle>
+        <CardDescription className="text-white/70">Tasks by status</CardDescription>
       </CardHeader>
       <CardContent>
-        <ChartContainer config={chartConfig} className="h-[250px]">
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={taskData}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="day" />
-              <YAxis />
-              <ChartTooltip content={<ChartTooltipContent />} />
-              <Bar dataKey="completed" fill="var(--color-completed)" radius={[4, 4, 0, 0]} />
-              <Bar dataKey="pending" fill="var(--color-pending)" radius={[4, 4, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </ChartContainer>
+        {loading ? (
+          <div className="flex items-center justify-center h-[300px]">
+            <div className="flex flex-col items-center space-y-2">
+              <Loader2 className="w-8 h-8 animate-spin text-primary" />
+              <span className="text-sm text-muted-foreground">Loading task data...</span>
+            </div>
+          </div>
+        ) : taskData.length > 0 ? (
+          <ChartContainer config={chartConfig} className="h-[300px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie
+                  data={taskData}
+                  cx="50%"
+                  cy="50%"
+                  labelLine={false}
+                  label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
+                  outerRadius={80}
+                  fill="#8884d8"
+                  dataKey="value"
+                >
+                  {taskData.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={COLORS[entry.status] || '#94A3B8'} />
+                  ))}
+                </Pie>
+                <ChartTooltip content={<ChartTooltipContent />} />
+                <Legend />
+              </PieChart>
+            </ResponsiveContainer>
+          </ChartContainer>
+        ) : (
+          <div className="flex items-center justify-center h-[300px]">
+            <p className="text-muted-foreground">No tasks available. Create some tasks to see the distribution.</p>
+          </div>
+        )}
       </CardContent>
     </Card>
   );

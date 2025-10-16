@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { DashboardLayout } from "@/components/DashboardLayout";
-import { Plus, Search, DollarSign, TrendingUp, TrendingDown, Calendar, Download, Eye, Edit } from "lucide-react";
+import { Plus, Search, DollarSign, TrendingUp, TrendingDown, Calendar, Download, Eye, Edit, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -9,94 +9,34 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import { useToast } from "@/hooks/use-toast";
-
-interface Transaction {
-  id: string;
-  type: "income" | "expense";
-  amount: number;
-  description: string;
-  category: string;
-  date: string;
-  status: "pending" | "completed" | "cancelled";
-  client?: string;
-}
-
-interface Invoice {
-  id: string;
-  invoiceNumber: string;
-  client: string;
-  amount: number;
-  status: "draft" | "sent" | "paid" | "overdue";
-  dueDate: string;
-  issueDate: string;
-}
+import { toast } from "sonner";
+import { useAuth } from "@/hooks/useAuth";
+import { getInvoices, getExpenses, getFinancialSummary, Invoice, Expense } from "@/services/financesService";
 
 const Finances = () => {
-  const { toast } = useToast();
+  const { user } = useAuth();
+  const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [summary, setSummary] = useState({ totalRevenue: 0, pendingInvoices: 0, totalExpenses: 0, profit: 0 });
+
+  useEffect(() => {
+    const fetchData = async () => {
+      if (!user?.id) return;
+      setLoading(true);
+      const [inv, exp, sum] = await Promise.all([
+        getInvoices(user.id),
+        getExpenses(user.id),
+        getFinancialSummary(user.id)
+      ]);
+      setInvoices(inv);
+      setExpenses(exp);
+      if (sum) setSummary(sum);
+      setLoading(false);
+    };
+    fetchData();
+  }, [user?.id]);
   
-  const [transactions, setTransactions] = useState<Transaction[]>([
-    {
-      id: "1",
-      type: "income",
-      amount: 15000,
-      description: "Q4 Consulting Services",
-      category: "Consulting",
-      date: "2024-01-10",
-      status: "completed",
-      client: "TechCorp Solutions"
-    },
-    {
-      id: "2",
-      type: "expense",
-      amount: 2500,
-      description: "Office Rent",
-      category: "Overhead",
-      date: "2024-01-08",
-      status: "completed"
-    },
-    {
-      id: "3",
-      type: "income",
-      amount: 8000,
-      description: "Website Development",
-      category: "Development",
-      date: "2024-01-05",
-      status: "pending",
-      client: "StartupCo"
-    }
-  ]);
-
-  const [invoices, setInvoices] = useState<Invoice[]>([
-    {
-      id: "1",
-      invoiceNumber: "INV-2024-001",
-      client: "TechCorp Solutions",
-      amount: 15000,
-      status: "paid",
-      dueDate: "2024-01-15",
-      issueDate: "2024-01-01"
-    },
-    {
-      id: "2",
-      invoiceNumber: "INV-2024-002",
-      client: "Innovate Industries",
-      amount: 12000,
-      status: "sent",
-      dueDate: "2024-01-20",
-      issueDate: "2024-01-05"
-    },
-    {
-      id: "3",
-      invoiceNumber: "INV-2024-003",
-      client: "StartupCo",
-      amount: 8000,
-      status: "overdue",
-      dueDate: "2024-01-10",
-      issueDate: "2023-12-25"
-    }
-  ]);
-
   const [searchTerm, setSearchTerm] = useState("");
   const [isTransactionDialogOpen, setIsTransactionDialogOpen] = useState(false);
   const [isInvoiceDialogOpen, setIsInvoiceDialogOpen] = useState(false);
@@ -121,17 +61,11 @@ const Finances = () => {
     description: ""
   });
 
-  // Calculate totals
-  const totalIncome = transactions
-    .filter(t => t.type === "income" && t.status === "completed")
-    .reduce((sum, t) => sum + t.amount, 0);
-  
-  const totalExpenses = transactions
-    .filter(t => t.type === "expense" && t.status === "completed")
-    .reduce((sum, t) => sum + t.amount, 0);
-  
-  const netProfit = totalIncome - totalExpenses;
-  const pendingInvoices = invoices.filter(inv => inv.status === "sent" || inv.status === "overdue");
+  // Calculate totals from summary
+  const totalIncome = summary.totalRevenue;
+  const totalExpenses = summary.totalExpenses;
+  const netProfit = summary.profit;
+  const pendingInvoicesFiltered = invoices.filter(inv => inv.status === 'sent' || inv.status === 'overdue');
 
   const handleCreateTransaction = () => {
     if (!newTransaction.description.trim() || newTransaction.amount <= 0) return;
@@ -208,6 +142,12 @@ const Finances = () => {
         </div>
 
         {/* Financial Overview */}
+        {loading ? (
+          <div className="flex items-center justify-center py-12">
+            <Loader2 className="w-12 h-12 animate-spin text-primary" />
+          </div>
+        ) : (
+          <>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -250,7 +190,7 @@ const Finances = () => {
               <Calendar className="h-4 w-4 text-secondary-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{pendingInvoices.length}</div>
+              <div className="text-2xl font-bold">{pendingInvoicesFiltered.length}</div>
               <p className="text-xs text-muted-foreground">Awaiting payment</p>
             </CardContent>
           </Card>
@@ -497,6 +437,8 @@ const Finances = () => {
             </div>
           </TabsContent>
         </Tabs>
+        </>
+        )}
       </div>
     </DashboardLayout>
   );

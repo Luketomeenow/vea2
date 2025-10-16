@@ -1,253 +1,542 @@
-import { useState } from "react";
-import { Send, Bot, User, TrendingUp, CheckSquare, DollarSign } from "lucide-react";
+import { useState, useEffect, useRef } from "react";
+import { Send, Bot, User, Loader2, AlertCircle, Plus, ImageIcon, Video } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Progress } from "@/components/ui/progress";
+import { useAuth } from "@/hooks/useAuth";
+import { chatApi } from "@/services/api";
+import { generateAIResponse } from "@/services/aiService";
+import { checkVideoStatus } from "@/services/kieService";
+import { uploadMediaFromUrl, generateMediaFileName } from "@/services/storageService";
+import { toast } from "sonner";
+import { supabase } from "@/lib/supabase";
 
 interface Message {
   id: string;
-  type: 'user' | 'ai';
+  role: 'user' | 'assistant' | 'system';
   content: string;
-  timestamp: Date;
-  widgets?: React.ReactNode;
+  created_at: string;
+  mediaType?: 'image' | 'video';
+  mediaUrl?: string;
+  isGenerating?: boolean;
+  progress?: number;
 }
 
 const sampleQueries = [
-  "What are my most urgent tasks for today?",
-  "Show me my revenue for this month",
-  "Which customers have overdue invoices?",
-  "What's the status of active projects?",
+  "Show me my projects and their status",
+  "How's my business health overall?",
+  "What tasks do I have pending?",
+  "Create a task: Prepare Q1 report",
+  "Show me pending invoices",
+  "Generate an image of a modern office",
 ];
 
 export function AIChat() {
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: '1',
-      type: 'ai',
-      content: "Hello! I'm your AI Assistant. I can help you analyze your business data, prioritize tasks, and provide strategic insights. What would you like to know?",
-      timestamp: new Date(),
-    }
-  ]);
+  const { user } = useAuth();
+  const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isTyping, setIsTyping] = useState(false);
+  const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(true);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // Auto-scroll to bottom
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages]);
+
+  // Load or create chat session
+  useEffect(() => {
+    if (user?.id) {
+      loadOrCreateSession();
+    }
+  }, [user]);
+
+  const loadOrCreateSession = async () => {
+    if (!user?.id) return;
+
+    try {
+      setIsLoadingHistory(true);
+      setError(null);
+
+      // Get user's most recent session
+      const { data: sessions, error: sessionError } = await chatApi.getSessions(user.id);
+
+      if (sessionError) {
+        console.error('Session error:', sessionError);
+        // Don't block - use temp session
+        setCurrentSessionId('temp-session-' + Date.now());
+        addWelcomeMessage();
+        return;
+      }
+
+      let sessionId: string;
+
+      if (sessions && sessions.length > 0) {
+        // Use most recent session
+        sessionId = sessions[0].id;
+        setCurrentSessionId(sessionId);
+
+        // Load messages for this session
+        const { data: sessionMessages, error: messagesError } = await chatApi.getMessages(sessionId);
+        
+        if (messagesError) {
+          console.error('Messages error:', messagesError);
+          addWelcomeMessage();
+          return;
+        }
+
+        if (sessionMessages && sessionMessages.length > 0) {
+          // Parse metadata to extract media URLs
+          const messagesWithMedia = sessionMessages.map(msg => ({
+            ...msg,
+            mediaType: msg.metadata?.mediaType,
+            mediaUrl: msg.metadata?.mediaUrl,
+          }));
+          setMessages(messagesWithMedia);
+        } else {
+          // Add welcome message
+          addWelcomeMessage();
+        }
+      } else {
+        // Create new session
+        const { data: newSession, error: createError } = await chatApi.createSession(
+          user.id,
+          'New Chat'
+        );
+
+        if (createError) {
+          console.error('Create session error:', createError);
+          // Use temp session instead of blocking
+          setCurrentSessionId('temp-session-' + Date.now());
+        } else {
+          sessionId = newSession.id;
+          setCurrentSessionId(sessionId);
+        }
+        addWelcomeMessage();
+      }
+    } catch (err: any) {
+      console.error('Failed to load chat session:', err);
+      // Don't show error banner - just use temp session
+      setCurrentSessionId('temp-session-' + Date.now());
+      addWelcomeMessage(); // Still show welcome message
+    } finally {
+      setIsLoadingHistory(false);
+    }
+  };
+
+  const addWelcomeMessage = () => {
+    setMessages([{
+      id: 'welcome',
+      role: 'assistant',
+      content: "👋 Hello! I'm your AI Assistant with full access to your business data.\n\n✨ I can:\n• Show your projects, tasks, customers, and finances\n• Create tasks and projects for you\n• Analyze your business health\n• Generate images and videos\n• Provide strategic insights\n\nWhat would you like to know?",
+      created_at: new Date().toISOString(),
+    }]);
+  };
+
+  const handleNewChat = async () => {
+    if (!user?.id) return;
+
+    try {
+      const { data: newSession, error } = await chatApi.createSession(
+        user.id,
+        'New Chat'
+      );
+
+      if (error) throw error;
+
+      setCurrentSessionId(newSession.id);
+      addWelcomeMessage();
+      toast.success('New chat started');
+    } catch (err: any) {
+      toast.error('Failed to create new chat');
+      console.error(err);
+    }
+  };
+
+  const handleSend = async (message: string = input) => {
+    if (!message.trim() || !user?.id || !currentSessionId) return;
+
+    setError(null); // Clear any previous errors
+
+    const userMessage: Message = {
+      id: `temp-${Date.now()}`,
+      role: 'user',
+      content: message,
+      created_at: new Date().toISOString(),
+    };
+
+    setMessages(prev => [...prev, userMessage]);
+    setInput("");
+    setIsTyping(true);
+    setError(null);
+
+    try {
+      // Save user message to database
+      await chatApi.sendMessage(currentSessionId, user.id, message, 'user');
+
+      // Prepare conversation history for AI
+      const conversationHistory = messages.slice(-5).map(msg => ({
+        role: msg.role as 'user' | 'assistant' | 'system',
+        content: msg.content
+      }));
+
+      conversationHistory.push({
+        role: 'user',
+        content: message
+      });
+
+      // Get AI response (can be text, image, or video) with function calling support
+      const aiResponse = await generateAIResponse(conversationHistory, user.id);
+
+      // Save AI response to database (if session is real)
+      let savedMessage = null;
+      if (!currentSessionId.startsWith('temp-session-')) {
+        const result = await chatApi.sendMessage(
+          currentSessionId,
+          user.id,
+          aiResponse.content,
+          'assistant'
+        );
+        savedMessage = result.data;
+      }
+
+      const aiMessage: Message = {
+        id: savedMessage?.id || `ai-${Date.now()}`,
+        role: 'assistant',
+        content: aiResponse.content,
+        mediaType: aiResponse.type !== 'text' ? aiResponse.type : undefined,
+        mediaUrl: aiResponse.mediaUrl,
+        created_at: new Date().toISOString(),
+        isGenerating: aiResponse.type === 'video', // Mark video as generating
+        progress: 0,
+      };
+
+      setMessages(prev => [...prev, aiMessage]);
+
+      // Save image to storage immediately
+      if (aiResponse.type === 'image' && aiResponse.mediaUrl && savedMessage) {
+        const storageUrl = await saveMediaToStorage(
+          savedMessage.id,
+          aiResponse.mediaUrl,
+          'image'
+        );
+
+        if (storageUrl) {
+          // Update message with storage URL
+          setMessages(prev => prev.map(msg => 
+            msg.id === aiMessage.id ? { ...msg, mediaUrl: storageUrl } : msg
+          ));
+        }
+      }
+
+      // If video, start polling for status
+      if (aiResponse.type === 'video' && aiResponse.mediaUrl) {
+        pollVideoStatus(aiMessage.id, aiResponse.mediaUrl);
+      }
+
+    } catch (err: any) {
+      console.error('Chat error:', err);
+      
+      // Show error message in chat (not as a banner)
+      const errorMessage: Message = {
+        id: `error-${Date.now()}`,
+        role: 'assistant',
+        content: `⚠️ ${err.message || 'Sorry, I encountered an error. Please try again.'}`,
+        created_at: new Date().toISOString(),
+      };
+      setMessages(prev => [...prev, errorMessage]);
+      
+      // Show toast notification
+      toast.error(err.message || 'Failed to get AI response');
+    } finally {
+      setIsTyping(false);
+    }
+  };
 
   const handleSampleQuery = (query: string) => {
     setInput(query);
     handleSend(query);
   };
 
-  const handleSend = (message: string = input) => {
-    if (!message.trim()) return;
+  // Helper function to save media to storage and update database
+  const saveMediaToStorage = async (
+    messageId: string,
+    mediaUrl: string,
+    mediaType: 'image' | 'video'
+  ): Promise<string | null> => {
+    if (!user?.id || !currentSessionId || currentSessionId.startsWith('temp-session-')) {
+      return null;
+    }
 
-    const userMessage: Message = {
-      id: Date.now().toString(),
-      type: 'user',
-      content: message,
-      timestamp: new Date(),
-    };
+    try {
+      console.log(`💾 Saving ${mediaType} to storage...`);
 
-    setMessages(prev => [...prev, userMessage]);
-    setInput("");
-    setIsTyping(true);
+      // Determine file extension
+      const extension = mediaType === 'image' ? 'png' : 'mp4';
+      const bucket = mediaType === 'image' ? 'photos' : 'video';
+      
+      // Generate unique filename
+      const fileName = generateMediaFileName(user.id, mediaType, extension);
 
-    // Simulate AI response
-    setTimeout(() => {
-      const aiResponse = generateAIResponse(message);
-      setMessages(prev => [...prev, aiResponse]);
-      setIsTyping(false);
-    }, 1500);
+      // Upload to Supabase Storage
+      const { url: storageUrl, error } = await uploadMediaFromUrl(mediaUrl, bucket, fileName);
+
+      if (error || !storageUrl) {
+        console.error('Failed to upload media:', error);
+        toast.error(`Failed to save ${mediaType} to storage`);
+        return null;
+      }
+
+      // Update chat message in database with storage URL
+      const { error: updateError } = await supabase
+        .from('chat_messages')
+        .update({
+          metadata: {
+            mediaType,
+            mediaUrl: storageUrl,
+            originalUrl: mediaUrl,
+          }
+        })
+        .eq('id', messageId);
+
+      if (updateError) {
+        console.error('Failed to update message with storage URL:', updateError);
+        toast.error('Failed to save media to chat history');
+        return null;
+      }
+
+      console.log(`✅ ${mediaType} saved to storage: ${storageUrl}`);
+      toast.success(`${mediaType === 'image' ? 'Image' : 'Video'} saved to your library`);
+
+      return storageUrl;
+    } catch (err: any) {
+      console.error('Error saving media:', err);
+      return null;
+    }
   };
 
-  const generateAIResponse = (query: string): Message => {
-    const lowerQuery = query.toLowerCase();
-    
-    if (lowerQuery.includes('task') || lowerQuery.includes('urgent')) {
-      return {
-        id: Date.now().toString(),
-        type: 'ai',
-        content: "📋 **Task Analysis**: Here are your most urgent priorities with smart recommendations:",
-        timestamp: new Date(),
-        widgets: (
-          <div className="mt-4 space-y-3">
-            <div className="flex items-center justify-between p-3 bg-card border rounded-lg hover:bg-muted/50 transition-colors">
-              <div className="flex items-center space-x-3">
-                <CheckSquare className="w-4 h-4 text-destructive" />
-                <div>
-                  <span className="font-medium">Complete client proposal for ABC Corp</span>
-                  <p className="text-xs text-muted-foreground">Due: Today, 5:00 PM</p>
-                </div>
-              </div>
-              <Badge variant="destructive">High</Badge>
-            </div>
-            <div className="flex items-center justify-between p-3 bg-card border rounded-lg hover:bg-muted/50 transition-colors">
-              <div className="flex items-center space-x-3">
-                <CheckSquare className="w-4 h-4 text-yellow-500" />
-                <div>
-                  <span className="font-medium">Review marketing campaign metrics</span>
-                  <p className="text-xs text-muted-foreground">Due: Tomorrow</p>
-                </div>
-              </div>
-              <Badge variant="secondary">Medium</Badge>
-            </div>
-            <div className="mt-3 p-3 bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded-lg">
-              <p className="text-sm text-blue-800 dark:text-blue-200">
-                💡 <strong>AI Tip:</strong> Focus on the ABC Corp proposal first - it's your highest revenue opportunity this week.
-              </p>
-            </div>
-          </div>
-        )
-      };
-    }
-    
-    if (lowerQuery.includes('revenue') || lowerQuery.includes('money') || lowerQuery.includes('sales')) {
-      return {
-        id: Date.now().toString(),
-        type: 'ai',
-        content: "📊 **Revenue Intelligence**: Your financial performance is strong! Here's the breakdown:",
-        timestamp: new Date(),
-        widgets: (
-          <div className="mt-4 space-y-4">
-            <div className="p-4 bg-card border rounded-lg">
-              <div className="flex items-center space-x-4">
-                <div className="p-3 bg-green-100 dark:bg-green-900 rounded-lg">
-                  <TrendingUp className="w-6 h-6 text-green-600 dark:text-green-400" />
-                </div>
-                <div>
-                  <p className="text-2xl font-bold">$47,250</p>
-                  <p className="text-sm text-muted-foreground">This month's revenue</p>
-                  <p className="text-sm text-green-600 dark:text-green-400 font-medium">+12% vs last month</p>
-                </div>
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="p-3 bg-card border rounded-lg text-center">
-                <p className="text-lg font-semibold">$15,000</p>
-                <p className="text-xs text-muted-foreground">Pending invoices</p>
-              </div>
-              <div className="p-3 bg-card border rounded-lg text-center">
-                <p className="text-lg font-semibold">94%</p>
-                <p className="text-xs text-muted-foreground">Collection rate</p>
-              </div>
-            </div>
-            <div className="p-3 bg-amber-50 dark:bg-amber-950 border border-amber-200 dark:border-amber-800 rounded-lg">
-              <p className="text-sm text-amber-800 dark:text-amber-200">
-                ⚡ <strong>Action Item:</strong> Follow up on 3 overdue invoices worth $8,500 total.
-              </p>
-            </div>
-          </div>
-        )
-      };
-    }
+  // Poll video generation status
+  const pollVideoStatus = async (messageId: string, taskId: string) => {
+    const maxAttempts = 30; // 5 minutes max (30 * 10 seconds)
+    let attempt = 0;
 
-    if (lowerQuery.includes('customer') || lowerQuery.includes('client')) {
-      return {
-        id: Date.now().toString(),
-        type: 'ai',
-        content: "👥 **Customer Intelligence**: Your client relationships are performing excellently!",
-        timestamp: new Date(),
-        widgets: (
-          <div className="mt-4 space-y-3">
-            <div className="grid grid-cols-2 gap-3">
-              <div className="p-3 bg-card border rounded-lg text-center">
-                <p className="text-lg font-semibold">23</p>
-                <p className="text-xs text-muted-foreground">Active clients</p>
-                <p className="text-xs text-green-600">+3 this month</p>
-              </div>
-              <div className="p-3 bg-card border rounded-lg text-center">
-                <p className="text-lg font-semibold">4.8/5</p>
-                <p className="text-xs text-muted-foreground">Satisfaction</p>
-                <p className="text-xs text-green-600">+0.2 improvement</p>
-              </div>
-            </div>
-            <div className="p-3 bg-emerald-50 dark:bg-emerald-950 border border-emerald-200 dark:border-emerald-800 rounded-lg">
-              <p className="text-sm text-emerald-800 dark:text-emerald-200">
-                🎯 <strong>Opportunity:</strong> 2 clients ready for service upgrades - potential $12K revenue.
-              </p>
-            </div>
-          </div>
-        )
-      };
-    }
-    
-    return {
-      id: Date.now().toString(),
-      type: 'ai',
-      content: "🤖 I'm analyzing your business data for insights on: " + query + ". I can help with revenue analysis, task prioritization, customer intelligence, and strategic recommendations. What specific area interests you most?",
-      timestamp: new Date(),
-      widgets: (
-        <div className="mt-4 grid grid-cols-2 gap-2">
-          <Button variant="outline" size="sm" className="text-xs">
-            📊 Revenue trends
-          </Button>
-          <Button variant="outline" size="sm" className="text-xs">
-            📋 Task priorities
-          </Button>
-          <Button variant="outline" size="sm" className="text-xs">
-            👥 Customer insights
-          </Button>
-          <Button variant="outline" size="sm" className="text-xs">
-            🎯 Growth opportunities
-          </Button>
-        </div>
-      )
+    const poll = async () => {
+      if (attempt >= maxAttempts) {
+        // Timeout
+        setMessages(prev => prev.map(msg => 
+          msg.id === messageId 
+            ? { ...msg, isGenerating: false, content: msg.content + '\n\n⏱️ Video generation timed out. Please try again.' }
+            : msg
+        ));
+        return;
+      }
+
+      attempt++;
+
+      try {
+        // Wait 10 seconds before checking
+        await new Promise(resolve => setTimeout(resolve, 10000));
+
+        const statusResult = await checkVideoStatus(taskId);
+        console.log(`Video status check ${attempt}/${maxAttempts}:`, statusResult);
+
+        if (statusResult.success && statusResult.data) {
+          const status = statusResult.data.status;
+          const progress = statusResult.data.progress || 0;
+
+          // Update progress
+          setMessages(prev => prev.map(msg => 
+            msg.id === messageId 
+              ? { ...msg, progress: Math.round(progress * 100) }
+              : msg
+          ));
+
+          // Check if complete
+          if (status === 'SUCCESS' || status === 'completed') {
+            const videoUrl = statusResult.data.videoUrl || statusResult.data.url;
+            
+            if (videoUrl) {
+              // Update with original URL first
+              setMessages(prev => prev.map(msg => 
+                msg.id === messageId 
+                  ? { ...msg, isGenerating: false, mediaUrl: videoUrl, progress: 100 }
+                  : msg
+              ));
+              toast.success('Video generated successfully!');
+
+              // Save to storage in background
+              if (user?.id && currentSessionId && !currentSessionId.startsWith('temp-session-')) {
+                saveMediaToStorage(messageId, videoUrl, 'video').then(storageUrl => {
+                  if (storageUrl) {
+                    // Update with storage URL
+                    setMessages(prev => prev.map(msg => 
+                      msg.id === messageId ? { ...msg, mediaUrl: storageUrl } : msg
+                    ));
+                  }
+                });
+              }
+
+              return;
+            }
+          } else if (status === 'FAILED' || status === 'failed') {
+            setMessages(prev => prev.map(msg => 
+              msg.id === messageId 
+                ? { ...msg, isGenerating: false, content: msg.content + '\n\n❌ Video generation failed.' }
+                : msg
+            ));
+            toast.error('Video generation failed');
+            return;
+          }
+        }
+
+        // Continue polling
+        poll();
+      } catch (error) {
+        console.error('Error polling video status:', error);
+        poll(); // Retry
+      }
     };
+
+    poll();
   };
+
+  if (isLoadingHistory) {
+    return (
+      <Card className="bg-card/50 backdrop-blur-sm border border-border/50">
+        <CardContent className="p-6 flex items-center justify-center min-h-[400px]">
+          <div className="text-center">
+            <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4 text-primary" />
+            <p className="text-muted-foreground">Loading chat history...</p>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
 
   return (
     <Card className="bg-card/50 backdrop-blur-sm border border-border/50">
       <CardContent className="p-6">
-        <div className="flex items-center space-x-3 mb-6">
-          <div className="p-2 bg-gradient-primary rounded-lg">
-            <Bot className="w-6 h-6 text-white" />
+        <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center space-x-3">
+            <div className="p-2 bg-gradient-primary rounded-lg">
+              <Bot className="w-6 h-6 text-white" />
+            </div>
+            <div>
+              <h2 className="text-xl font-semibold">AI Assistant</h2>
+              <p className="text-sm text-muted-foreground">Your intelligent business advisor</p>
+            </div>
           </div>
-          <div>
-            <h2 className="text-xl font-semibold">AI Assistant</h2>
-            <p className="text-sm text-muted-foreground">Your intelligent business advisor</p>
-          </div>
+          <Button variant="outline" size="sm" onClick={handleNewChat}>
+            <Plus className="w-4 h-4 mr-2" />
+            New Chat
+          </Button>
         </div>
+
+        {/* Error Alert */}
+        {error && (
+          <Alert variant="destructive" className="mb-4">
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        )}
 
         {/* Sample Queries */}
-        <div className="mb-6">
-          <p className="text-sm text-muted-foreground mb-3">Try asking me:</p>
-          <div className="flex flex-wrap gap-2">
-            {sampleQueries.map((query, index) => (
-              <Button
-                key={index}
-                variant="outline"
-                size="sm"
-                onClick={() => handleSampleQuery(query)}
-            className="text-xs hover:bg-primary hover:text-primary-foreground transition-colors flex-shrink-0"
-          >
-            {query}
-          </Button>
-            ))}
+        {messages.length <= 1 && (
+          <div className="mb-6">
+            <p className="text-sm text-muted-foreground mb-3">Try asking me:</p>
+            <div className="flex flex-wrap gap-2">
+              {sampleQueries.map((query, index) => (
+                <Button
+                  key={index}
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handleSampleQuery(query)}
+                  disabled={isTyping}
+                  className="text-xs hover:bg-primary hover:text-primary-foreground transition-colors"
+                >
+                  {query}
+                </Button>
+              ))}
+            </div>
           </div>
-        </div>
+        )}
 
         {/* Chat Messages */}
-        <div className="space-y-4 mb-6 max-h-96 overflow-y-auto">
+        <div className="space-y-4 mb-6 max-h-[500px] overflow-y-auto pr-2">
           {messages.map((message) => (
             <div
               key={message.id}
-              className={`flex ${message.type === 'user' ? 'justify-end' : 'justify-start'}`}
+              className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
             >
-              <div className={`max-w-[80%] ${message.type === 'user' ? 'order-2' : 'order-1'}`}>
+              <div className={`max-w-[80%] ${message.role === 'user' ? 'order-2' : 'order-1'}`}>
                 <div className="flex items-start space-x-2">
-                  {message.type === 'ai' && (
+                  {message.role === 'assistant' && (
                     <div className="w-8 h-8 bg-gradient-primary rounded-full flex items-center justify-center flex-shrink-0">
                       <Bot className="w-4 h-4 text-white" />
                     </div>
                   )}
                   <div className={`p-3 rounded-lg ${
-                    message.type === 'user' 
+                    message.role === 'user' 
                       ? 'bg-primary text-primary-foreground ml-auto' 
                       : 'bg-muted'
                   }`}>
-                    <p className="text-sm">{message.content}</p>
-                    {message.widgets && message.widgets}
+                    <p className="text-sm whitespace-pre-wrap">{message.content}</p>
+                    
+                    {/* Progress indicator for generating media */}
+                    {message.isGenerating && (
+                      <div className="mt-4 p-4 bg-background/50 rounded-lg border border-border/50">
+                        <div className="flex items-center space-x-3 mb-3">
+                          {message.mediaType === 'video' ? (
+                            <Video className="w-5 h-5 text-primary animate-pulse" />
+                          ) : (
+                            <ImageIcon className="w-5 h-5 text-primary animate-pulse" />
+                          )}
+                          <span className="text-sm font-medium">
+                            Generating {message.mediaType}... {message.progress || 0}%
+                          </span>
+                        </div>
+                        <Progress value={message.progress || 0} className="h-2" />
+                        <p className="text-xs text-muted-foreground mt-2">
+                          This may take 30-90 seconds. Please wait...
+                        </p>
+                      </div>
+                    )}
+                    
+                    {/* Display generated image */}
+                    {message.mediaType === 'image' && message.mediaUrl && !message.isGenerating && (
+                      <div className="mt-3">
+                        <img 
+                          src={message.mediaUrl} 
+                          alt="Generated content" 
+                          className="rounded-lg max-w-full h-auto border border-border"
+                          loading="lazy"
+                        />
+                      </div>
+                    )}
+                    
+                    {/* Display generated video */}
+                    {message.mediaType === 'video' && message.mediaUrl && !message.isGenerating && (
+                      <div className="mt-3">
+                        <video 
+                          src={message.mediaUrl} 
+                          controls 
+                          className="rounded-lg max-w-full h-auto border border-border"
+                          preload="metadata"
+                        >
+                          Your browser doesn't support video playback.
+                        </video>
+                      </div>
+                    )}
                   </div>
-                  {message.type === 'user' && (
+                  {message.role === 'user' && (
                     <div className="w-8 h-8 bg-muted rounded-full flex items-center justify-center flex-shrink-0">
                       <User className="w-4 h-4" />
                     </div>
@@ -273,6 +562,8 @@ export function AIChat() {
               </div>
             </div>
           )}
+          
+          <div ref={messagesEndRef} />
         </div>
 
         {/* Input */}
@@ -281,18 +572,29 @@ export function AIChat() {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             placeholder="Ask me about your business..."
-            onKeyPress={(e) => e.key === 'Enter' && handleSend()}
+            onKeyPress={(e) => e.key === 'Enter' && !e.shiftKey && handleSend()}
+            disabled={isTyping || !currentSessionId}
             className="bg-background/50"
           />
-          <Button onClick={() => handleSend()} disabled={!input.trim() || isTyping}>
-            <Send className="w-4 h-4" />
+          <Button 
+            onClick={() => handleSend()} 
+            disabled={!input.trim() || isTyping || !currentSessionId}
+          >
+            {isTyping ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <Send className="w-4 h-4" />
+            )}
           </Button>
         </div>
+
+        {!currentSessionId && (
+          <p className="text-xs text-muted-foreground mt-2 text-center">
+            Creating chat session...
+          </p>
+        )}
       </CardContent>
     </Card>
   );
 }
-
-
-
 

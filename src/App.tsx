@@ -3,8 +3,12 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { ProtectedRoute } from "@/components/ProtectedRoute";
 import Index from "./pages/Index";
+import Login from "./pages/Login";
+import Signup from "./pages/Signup";
 import NotFound from "./pages/NotFound";
+import DiagnosticTest from "./pages/DiagnosticTest";
 import Dashboard from "./pages/Dashboard";
 import AIAssistant from "./pages/AIAssistant";
 import Analytics from "./pages/Analytics";
@@ -27,18 +31,25 @@ const App = () => (
         <Sonner />
         <BrowserRouter>
           <Routes>
-            <Route path="/" element={<Index />} />
-            <Route path="/dashboard" element={<Dashboard />} />
-            <Route path="/ai-assistant" element={<AIAssistant />} />
-            <Route path="/analytics" element={<Analytics />} />
-            <Route path="/projects" element={<Projects />} />
-            <Route path="/tasks" element={<Tasks />} />
-            <Route path="/customers" element={<Customers />} />
-            <Route path="/finances" element={<Finances />} />
-            <Route path="/cash-flow" element={<CashFlow />} />
-            <Route path="/time-tracking" element={<TimeTracking />} />
-            <Route path="/calendar" element={<Calendar />} />
-            <Route path="/documents" element={<Documents />} />
+            {/* Public routes */}
+              <Route path="/" element={<Index />} />
+              <Route path="/login" element={<Login />} />
+              <Route path="/signup" element={<Signup />} />
+              <Route path="/diagnostic" element={<DiagnosticTest />} />
+            
+            {/* Protected routes */}
+            <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+            <Route path="/ai-assistant" element={<ProtectedRoute><AIAssistant /></ProtectedRoute>} />
+            <Route path="/analytics" element={<ProtectedRoute><Analytics /></ProtectedRoute>} />
+            <Route path="/projects" element={<ProtectedRoute><Projects /></ProtectedRoute>} />
+            <Route path="/tasks" element={<ProtectedRoute><Tasks /></ProtectedRoute>} />
+            <Route path="/customers" element={<ProtectedRoute><Customers /></ProtectedRoute>} />
+            <Route path="/finances" element={<ProtectedRoute><Finances /></ProtectedRoute>} />
+            <Route path="/cash-flow" element={<ProtectedRoute><CashFlow /></ProtectedRoute>} />
+            <Route path="/time-tracking" element={<ProtectedRoute><TimeTracking /></ProtectedRoute>} />
+            <Route path="/calendar" element={<ProtectedRoute><Calendar /></ProtectedRoute>} />
+            <Route path="/documents" element={<ProtectedRoute><Documents /></ProtectedRoute>} />
+            
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
           </Routes>

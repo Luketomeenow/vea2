@@ -18,9 +18,12 @@ import {
   Plus,
   Timer,
   Target,
-  TrendingUp
+  TrendingUp,
+  Loader2
 } from "lucide-react";
-import { useToast } from "@/hooks/use-toast";
+import { toast } from "sonner";
+import { useAuth } from "@/hooks/useAuth";
+import { getTimeEntries, getTimeTrackingSummary, TimeEntry as TimeEntryType } from "@/services/timeTrackingService";
 
 interface TimeEntry {
   id: string;
