@@ -1,13 +1,21 @@
-# 🎨 Kie.AI Setup Guide
+# 🎨 AI Media Generation Setup Guide
 
-## Quick Setup (2 minutes)
+## Google Cloud Vertex AI Setup (Recommended)
 
-### 1. Get Your Kie.AI API Key
-1. Go to [https://kie.ai/dashboard/api-keys](https://kie.ai/dashboard/api-keys)
-2. Sign up or log in
-3. Copy your API key
+### 1. Set Up Google Cloud Project
+1. Go to [Google Cloud Console](https://console.cloud.google.com/)
+2. Create a new project or select existing one
+3. Enable the Vertex AI API
+4. Go to [APIs & Services > Credentials](https://console.cloud.google.com/apis/credentials)
+5. Create credentials (API Key or Service Account)
 
-### 2. Add API Key to Your Project
+### 2. Get Access Token
+For development, you can use:
+```bash
+gcloud auth print-access-token
+```
+
+### 3. Add Configuration to Your Project
 
 **Create or edit the `.env` file** in your project root:
 
@@ -19,9 +27,21 @@ VITE_SUPABASE_ANON_KEY=your-supabase-anon-key
 # OpenAI Configuration  
 VITE_OPENAI_API_KEY=your-openai-api-key
 
-# Kie.ai Configuration (PASTE YOUR API KEY HERE)
-VITE_KIE_API_KEY=your-actual-kie-api-key-here
+# Google Cloud Vertex AI Configuration
+VITE_VERTEX_AI_PROJECT_ID=your-google-cloud-project-id
+VITE_VERTEX_AI_LOCATION=us-central1
+VITE_VERTEX_AI_ACCESS_TOKEN=your-google-cloud-access-token
+
+# Kie.ai Configuration (Alternative)
+VITE_KIE_API_KEY=your-kie-api-key
 ```
+
+## Kie.AI Setup (Alternative)
+
+### 1. Get Your Kie.AI API Key
+1. Go to [https://kie.ai/dashboard/api-keys](https://kie.ai/dashboard/api-keys)
+2. Sign up or log in
+3. Copy your API key
 
 **Replace** `your-actual-kie-api-key-here` with your actual Kie.AI API key.
 

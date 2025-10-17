@@ -8,7 +8,7 @@ import { Progress } from "@/components/ui/progress";
 import { useAuth } from "@/hooks/useAuth";
 import { chatApi } from "@/services/api";
 import { generateAIResponse } from "@/services/aiService";
-import { checkVideoStatus } from "@/services/kieService";
+import { checkVeoVideoStatus } from "@/services/vertexAIService";
 import { uploadMediaFromUrl, generateMediaFileName } from "@/services/storageService";
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
@@ -31,6 +31,7 @@ const sampleQueries = [
   "Create a task: Prepare Q1 report",
   "Show me pending invoices",
   "Generate an image of a modern office",
+  "Create a video of a business presentation",
 ];
 
 export function AIChat() {
@@ -136,7 +137,7 @@ export function AIChat() {
     setMessages([{
       id: 'welcome',
       role: 'assistant',
-      content: "👋 Hello! I'm your AI Assistant with full access to your business data.\n\n✨ I can:\n• Show your projects, tasks, customers, and finances\n• Create tasks and projects for you\n• Analyze your business health\n• Generate images and videos\n• Provide strategic insights\n\nWhat would you like to know?",
+      content: "👋 Hello! I'm your AI Assistant with full access to your business data.\n\n✨ I can:\n• Show your projects, tasks, customers, and finances\n• Create tasks and projects for you\n• Analyze your business health\n• Generate images with Google Cloud Imagen\n• Create videos with Google Cloud Veo\n• Provide strategic insights\n\nWhat would you like to know?",
       created_at: new Date().toISOString(),
     }]);
   };
@@ -345,7 +346,7 @@ export function AIChat() {
         // Wait 10 seconds before checking
         await new Promise(resolve => setTimeout(resolve, 10000));
 
-        const statusResult = await checkVideoStatus(taskId);
+        const statusResult = await checkVeoVideoStatus(taskId);
         console.log(`Video status check ${attempt}/${maxAttempts}:`, statusResult);
 
         if (statusResult.success && statusResult.data) {
