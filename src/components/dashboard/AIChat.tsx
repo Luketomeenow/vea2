@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { Send, Bot, User, Loader2, AlertCircle, Plus, ImageIcon, Video } from "lucide-react";
+import { Send, Bot, User, Loader2, AlertCircle, Plus, ImageIcon, Video, Upload, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
@@ -8,7 +8,7 @@ import { Progress } from "@/components/ui/progress";
 import { useAuth } from "@/hooks/useAuth";
 import { chatApi } from "@/services/api";
 import { generateAIResponse } from "@/services/aiService";
-import { checkVeoVideoStatus } from "@/services/vertexAIService";
+import { checkVideoStatus } from "@/services/kieService";
 import { uploadMediaFromUrl, generateMediaFileName } from "@/services/storageService";
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
@@ -22,6 +22,7 @@ interface Message {
   mediaUrl?: string;
   isGenerating?: boolean;
   progress?: number;
+  isUploadedImage?: boolean;
 }
 
 const sampleQueries = [
@@ -32,9 +33,15 @@ const sampleQueries = [
   "Show me pending invoices",
   "Generate an image of a modern office",
   "Create a video of a business presentation",
+  "Upload images and create content from them",
+  "Drag & drop multiple images for reference",
 ];
 
-export function AIChat() {
+interface AIChatProps {
+  initialQuery?: string | null;
+}
+
+export function AIChat({ initialQuery }: AIChatProps) {
   const { user } = useAuth();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
@@ -42,7 +49,12 @@ export function AIChat() {
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isLoadingHistory, setIsLoadingHistory] = useState(true);
+  const [uploadedImages, setUploadedImages] = useState<string[]>([]);
+  const [isUploading, setIsUploading] = useState(false);
+  const [isDragOver, setIsDragOver] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const hasProcessedInitialQuery = useRef(false);
 
   // Auto-scroll to bottom
   const scrollToBottom = () => {
@@ -59,6 +71,18 @@ export function AIChat() {
       loadOrCreateSession();
     }
   }, [user]);
+
+  // Handle initial query from Hero section
+  useEffect(() => {
+    if (initialQuery && currentSessionId && !hasProcessedInitialQuery.current && !isLoadingHistory) {
+      hasProcessedInitialQuery.current = true;
+      setInput(initialQuery);
+      // Auto-send the query after a short delay
+      setTimeout(() => {
+        handleSend(initialQuery);
+      }, 500);
+    }
+  }, [initialQuery, currentSessionId, isLoadingHistory]);
 
   const loadOrCreateSession = async () => {
     if (!user?.id) return;
@@ -137,7 +161,7 @@ export function AIChat() {
     setMessages([{
       id: 'welcome',
       role: 'assistant',
-      content: "👋 Hello! I'm your AI Assistant with full access to your business data.\n\n✨ I can:\n• Show your projects, tasks, customers, and finances\n• Create tasks and projects for you\n• Analyze your business health\n• Generate images with Google Cloud Imagen\n• Create videos with Google Cloud Veo\n• Provide strategic insights\n\nWhat would you like to know?",
+      content: "👋 Hello! I'm your AI Assistant with full access to your business data.\n\n✨ I can:\n• Show your projects, tasks, customers, and finances\n• Create tasks and projects for you\n• Analyze your business health\n• Generate images with Kie.ai\n• Create videos with Veo 3\n• Upload multiple images as references\n• Use uploaded images for both image and video generation\n• Provide strategic insights\n\n📎 Tips:\n• Click the upload button or drag & drop images\n• Upload multiple images for better reference\n• Use images as references for both image and video generation\n\nWhat would you like to know?",
       created_at: new Date().toISOString(),
     }]);
   };
@@ -195,7 +219,8 @@ export function AIChat() {
       });
 
       // Get AI response (can be text, image, or video) with function calling support
-      const aiResponse = await generateAIResponse(conversationHistory, user.id);
+      // Pass uploaded images as reference if available
+      const aiResponse = await generateAIResponse(conversationHistory, user.id, undefined, uploadedImages.length > 0 ? uploadedImages : undefined);
 
       // Save AI response to database (if session is real)
       let savedMessage = null;
@@ -265,6 +290,224 @@ export function AIChat() {
   const handleSampleQuery = (query: string) => {
     setInput(query);
     handleSend(query);
+  };
+
+  // Handle image upload (single or multiple files)
+  const handleImageUpload = async (files: FileList | File[]) => {
+    const fileArray = Array.from(files);
+    
+    // Validate all files
+    for (const file of fileArray) {
+      if (!file.type.startsWith('image/')) {
+        toast.error(`${file.name} is not an image file`);
+        return;
+      }
+      if (file.size > 10 * 1024 * 1024) {
+        toast.error(`${file.name} is too large (max 10MB)`);
+        return;
+      }
+    }
+
+    setIsUploading(true);
+
+    try {
+      const newImages: string[] = [];
+      
+      // Process each file
+      for (const file of fileArray) {
+        const dataUrl = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = (e) => resolve(e.target?.result as string);
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        });
+        newImages.push(dataUrl);
+      }
+
+      setUploadedImages(prev => [...prev, ...newImages]);
+      setIsUploading(false);
+      toast.success(`${newImages.length} image(s) uploaded successfully! You can now use them as references for generation.`);
+    } catch (error) {
+      console.error('Error uploading images:', error);
+      toast.error('Failed to upload images');
+      setIsUploading(false);
+    }
+  };
+
+  // Handle file input change
+  const handleFileInputChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files;
+    if (files && files.length > 0) {
+      handleImageUpload(files);
+    }
+  };
+
+  // Remove uploaded image by index
+  const removeUploadedImage = (index: number) => {
+    setUploadedImages(prev => prev.filter((_, i) => i !== index));
+  };
+
+  // Clear all uploaded images
+  const clearAllUploadedImages = () => {
+    setUploadedImages([]);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
+  // Handle sending message with uploaded images
+  const handleSendWithImage = async (message: string = input) => {
+    if (!message.trim() || !user?.id || !currentSessionId) return;
+
+    // Store reference images before clearing them
+    const currentReferenceImages = [...uploadedImages];
+
+    // If there are uploaded images, add them to the message
+    if (uploadedImages.length > 0) {
+      // Add each uploaded image as a separate message
+      for (const imageUrl of uploadedImages) {
+        const userMessage: Message = {
+          id: `temp-${Date.now()}-${Math.random()}`,
+          role: 'user',
+          content: message,
+          created_at: new Date().toISOString(),
+          mediaType: 'image',
+          mediaUrl: imageUrl,
+          isUploadedImage: true,
+        };
+
+        setMessages(prev => [...prev, userMessage]);
+      }
+      
+      // Clear the uploaded images after sending
+      setUploadedImages([]);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
+
+    // Continue with normal message handling, but pass reference images
+    await handleSendWithReferenceImages(message, currentReferenceImages);
+  };
+
+  // Handle sending message with reference images
+  const handleSendWithReferenceImages = async (message: string, referenceImages: string[]) => {
+    if (!message.trim() || !user?.id || !currentSessionId) return;
+
+    const userMessage: Message = {
+      id: `temp-${Date.now()}`,
+      role: 'user',
+      content: message,
+      created_at: new Date().toISOString(),
+    };
+
+    setMessages(prev => [...prev, userMessage]);
+    setInput("");
+    setIsTyping(true);
+    setError(null);
+
+    try {
+      // Save user message to database
+      await chatApi.sendMessage(currentSessionId, user.id, message, 'user');
+
+      // Prepare conversation history for AI
+      const conversationHistory = messages.slice(-5).map(msg => ({
+        role: msg.role as 'user' | 'assistant' | 'system',
+        content: msg.content
+      }));
+
+      conversationHistory.push({
+        role: 'user',
+        content: message
+      });
+
+      // Get AI response with reference images
+      const aiResponse = await generateAIResponse(conversationHistory, user.id, undefined, referenceImages.length > 0 ? referenceImages : undefined);
+
+      // Save AI response to database (if session is real)
+      let savedMessage = null;
+      if (!currentSessionId.startsWith('temp-session-')) {
+        const result = await chatApi.sendMessage(
+          currentSessionId,
+          user.id,
+          aiResponse.content,
+          'assistant'
+        );
+        savedMessage = result.data;
+      }
+
+      const aiMessage: Message = {
+        id: savedMessage?.id || `ai-${Date.now()}`,
+        role: 'assistant',
+        content: aiResponse.content,
+        mediaType: aiResponse.type !== 'text' ? aiResponse.type : undefined,
+        mediaUrl: aiResponse.mediaUrl,
+        created_at: new Date().toISOString(),
+        isGenerating: aiResponse.type === 'video', // Mark video as generating
+        progress: 0,
+      };
+
+      setMessages(prev => [...prev, aiMessage]);
+
+      // Save image to storage immediately
+      if (aiResponse.type === 'image' && aiResponse.mediaUrl && savedMessage) {
+        const storageUrl = await saveMediaToStorage(
+          savedMessage.id,
+          aiResponse.mediaUrl,
+          'image'
+        );
+
+        if (storageUrl) {
+          // Update message with storage URL
+          setMessages(prev => prev.map(msg => 
+            msg.id === aiMessage.id ? { ...msg, mediaUrl: storageUrl } : msg
+          ));
+        }
+      }
+
+      // If video, start polling for status
+      if (aiResponse.type === 'video' && aiResponse.mediaUrl) {
+        pollVideoStatus(aiMessage.id, aiResponse.mediaUrl);
+      }
+
+    } catch (err: any) {
+      console.error('Chat error:', err);
+      
+      // Show error message in chat (not as a banner)
+      const errorMessage: Message = {
+        id: `error-${Date.now()}`,
+        role: 'assistant',
+        content: `⚠️ ${err.message || 'Sorry, I encountered an error. Please try again.'}`,
+        created_at: new Date().toISOString(),
+      };
+      setMessages(prev => [...prev, errorMessage]);
+      
+      // Show toast notification
+      toast.error(err.message || 'Failed to get AI response');
+    } finally {
+      setIsTyping(false);
+    }
+  };
+
+  // Drag and drop handlers
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragOver(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragOver(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragOver(false);
+    
+    const files = e.dataTransfer.files;
+    if (files && files.length > 0) {
+      handleImageUpload(files);
+    }
   };
 
   // Helper function to save media to storage and update database
@@ -346,7 +589,7 @@ export function AIChat() {
         // Wait 10 seconds before checking
         await new Promise(resolve => setTimeout(resolve, 10000));
 
-        const statusResult = await checkVeoVideoStatus(taskId);
+        const statusResult = await checkVideoStatus(taskId);
         console.log(`Video status check ${attempt}/${maxAttempts}:`, statusResult);
 
         if (statusResult.success && statusResult.data) {
@@ -511,15 +754,20 @@ export function AIChat() {
                       </div>
                     )}
                     
-                    {/* Display generated image */}
+                    {/* Display generated or uploaded image */}
                     {message.mediaType === 'image' && message.mediaUrl && !message.isGenerating && (
                       <div className="mt-3">
                         <img 
                           src={message.mediaUrl} 
-                          alt="Generated content" 
+                          alt={message.isUploadedImage ? "Uploaded image" : "Generated content"} 
                           className="rounded-lg max-w-full h-auto border border-border"
                           loading="lazy"
                         />
+                        {message.isUploadedImage && (
+                          <p className="text-xs text-muted-foreground mt-1">
+                            📎 Uploaded image - can be used as reference for video generation
+                          </p>
+                        )}
                       </div>
                     )}
                     
@@ -567,18 +815,94 @@ export function AIChat() {
           <div ref={messagesEndRef} />
         </div>
 
+        {/* Uploaded Images Preview */}
+        {uploadedImages.length > 0 && (
+          <div className="mb-4 p-3 bg-muted/50 rounded-lg border border-border/50">
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-sm font-medium text-muted-foreground">
+                📎 Uploaded Images ({uploadedImages.length})
+              </span>
+              <div className="flex space-x-2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={clearAllUploadedImages}
+                  className="h-6 px-2 text-xs"
+                >
+                  Clear All
+                </Button>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+              {uploadedImages.map((imageUrl, index) => (
+                <div key={index} className="relative group">
+                  <img 
+                    src={imageUrl} 
+                    alt={`Uploaded ${index + 1}`} 
+                    className="rounded-lg w-full h-24 object-cover border border-border"
+                  />
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => removeUploadedImage(index)}
+                    className="absolute top-1 right-1 h-6 w-6 p-0 opacity-0 group-hover:opacity-100 transition-opacity bg-red-500 hover:bg-red-600 text-white"
+                  >
+                    <X className="w-3 h-3" />
+                  </Button>
+                </div>
+              ))}
+            </div>
+            <p className="text-xs text-muted-foreground mt-2">
+              These images will be used as references for generation
+            </p>
+          </div>
+        )}
+
         {/* Input */}
-        <div className="flex space-x-2">
-          <Input
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder="Ask me about your business..."
-            onKeyPress={(e) => e.key === 'Enter' && !e.shiftKey && handleSend()}
-            disabled={isTyping || !currentSessionId}
-            className="bg-background/50"
-          />
+        <div 
+          className={`flex space-x-2 ${isDragOver ? 'ring-2 ring-primary ring-offset-2' : ''}`}
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
+        >
+          <div className="flex-1 relative">
+            <Input
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              placeholder={
+                uploadedImages.length > 0 
+                  ? `Describe what you want to create using ${uploadedImages.length} reference image(s)...` 
+                  : "Ask me about your business or drag & drop images here..."
+              }
+              onKeyPress={(e) => e.key === 'Enter' && !e.shiftKey && handleSendWithImage()}
+              disabled={isTyping || !currentSessionId}
+              className={`bg-background/50 pr-10 ${isDragOver ? 'border-primary' : ''}`}
+            />
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              multiple
+              onChange={handleFileInputChange}
+              className="hidden"
+            />
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={isTyping || isUploading}
+              className="absolute right-1 top-1/2 -translate-y-1/2 h-8 w-8 p-0"
+              title="Upload images (multiple supported)"
+            >
+              {isUploading ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Upload className="w-4 h-4" />
+              )}
+            </Button>
+          </div>
           <Button 
-            onClick={() => handleSend()} 
+            onClick={() => handleSendWithImage()} 
             disabled={!input.trim() || isTyping || !currentSessionId}
           >
             {isTyping ? (
@@ -588,6 +912,16 @@ export function AIChat() {
             )}
           </Button>
         </div>
+
+        {/* Drag & Drop Overlay */}
+        {isDragOver && (
+          <div className="absolute inset-0 bg-primary/10 border-2 border-dashed border-primary rounded-lg flex items-center justify-center z-10">
+            <div className="text-center">
+              <Upload className="w-8 h-8 mx-auto mb-2 text-primary" />
+              <p className="text-sm font-medium text-primary">Drop images here to upload</p>
+            </div>
+          </div>
+        )}
 
         {!currentSessionId && (
           <p className="text-xs text-muted-foreground mt-2 text-center">

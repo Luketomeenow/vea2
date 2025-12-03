@@ -1,5 +1,5 @@
 import { supabase } from '@/lib/supabase';
-import { detectMediaRequest, generateImageWithImagen, generateVideoWithVeo, enhancePrompt, checkVeoVideoStatus } from './vertexAIService';
+import { detectMediaRequest, generateImage, generateVideo, enhancePrompt, checkVideoStatus } from './kieService';
 import { AI_FUNCTIONS, executeFunctionCall } from './aiFunctionsService';
 
 export interface ChatMessage {
@@ -18,21 +18,34 @@ export interface MediaContent {
 export const generateAIResponse = async (
   messages: ChatMessage[],
   userId: string,
-  systemPrompt?: string
+  systemPrompt?: string,
+  referenceImages?: string[]
 ): Promise<{ type: 'text' | 'image' | 'video'; content: string; mediaUrl?: string; functionCall?: any }> => {
   try {
     // Get the last user message
     const lastMessage = messages[messages.length - 1]?.content || '';
     
-    // Detect if this is a media generation request
-    const mediaRequest = detectMediaRequest(lastMessage);
-    console.log('Media request detection:', mediaRequest);
+    // Check if there are uploaded images in recent messages OR passed as parameter
+    const recentMessages = messages.slice(-5); // Check last 5 messages
+    const uploadedImageMessages = recentMessages.filter(msg => 
+      msg.role === 'user' && msg.mediaType === 'image' && msg.mediaUrl
+    );
+    const messageReferenceImages = uploadedImageMessages.map(msg => msg.mediaUrl).filter(Boolean) as string[];
     
-    // Handle Image Generation with Google Cloud Imagen
+    // Use passed reference images if available, otherwise use message history
+    const finalReferenceImages = referenceImages && referenceImages.length > 0 ? referenceImages : messageReferenceImages;
+    
+    // Detect if this is a media generation request
+    const mediaRequest = detectMediaRequest(lastMessage, finalReferenceImages.length > 0);
+    console.log('Media request detection:', mediaRequest);
+    console.log('Reference images found:', finalReferenceImages.length);
+    console.log('Reference images:', finalReferenceImages);
+    
+    // Handle Image Generation with Kie.ai
     if (mediaRequest.type === 'image') {
-      console.log('🎨 Starting image generation with Google Cloud Imagen...');
-      const enhancedPrompt = enhancePrompt(mediaRequest.cleanPrompt || lastMessage, 'image');
-      const result = await generateImageWithImagen(enhancedPrompt);
+      console.log('🎨 Starting image generation with Kie.ai...');
+      const enhancedPrompt = enhancePrompt(mediaRequest.cleanPrompt || lastMessage, 'image', finalReferenceImages.length > 0);
+      const result = await generateImage(enhancedPrompt, finalReferenceImages.length > 0 ? finalReferenceImages : undefined);
       
       if (!result.success) {
         // Fall back to text response if image generation fails
@@ -48,18 +61,22 @@ export const generateAIResponse = async (
         throw new Error('No image URL in response');
       }
       
+      const imageMessage = finalReferenceImages.length > 0 
+        ? `🎨 Here's your generated image using ${finalReferenceImages.length} reference image(s): "${mediaRequest.cleanPrompt || lastMessage}"`
+        : `🎨 Here's your generated image: "${mediaRequest.cleanPrompt || lastMessage}"`;
+      
       return {
         type: 'image',
-        content: `🎨 Here's your generated image with Google Cloud Imagen: "${mediaRequest.cleanPrompt || lastMessage}"`,
+        content: imageMessage,
         mediaUrl: imageUrl
       };
     }
     
-    // Handle Video Generation with Google Cloud Veo
+    // Handle Video Generation with Kie.ai Veo 3
     if (mediaRequest.type === 'video') {
-      console.log('🎬 Starting video generation with Google Cloud Veo...');
-      const enhancedPrompt = enhancePrompt(mediaRequest.cleanPrompt || lastMessage, 'video');
-      const result = await generateVideoWithVeo(enhancedPrompt);
+      console.log('🎬 Starting video generation with Kie.ai Veo 3...');
+      const enhancedPrompt = enhancePrompt(mediaRequest.cleanPrompt || lastMessage, 'video', finalReferenceImages.length > 0);
+      const result = await generateVideo(enhancedPrompt, finalReferenceImages.length > 0 ? finalReferenceImages[0] : undefined);
       
       if (!result.success) {
         // Fall back to text response if video generation fails
@@ -69,24 +86,16 @@ export const generateAIResponse = async (
         };
       }
       
-      // Check if video is ready immediately or needs polling
-      if (result.data?.url) {
-        // Video is ready immediately
-        return {
-          type: 'video',
-          content: `🎬 Here's your generated video with Google Cloud Veo: "${mediaRequest.cleanPrompt || lastMessage}"`,
-          mediaUrl: result.data.url
-        };
-      } else if (result.taskId) {
-        // Video generation is async, return task ID for polling
-        return {
-          type: 'video',
-          content: `🎬 Generating your video with Google Cloud Veo: "${mediaRequest.cleanPrompt || lastMessage}"\n\nThis may take 30-90 seconds. I'll update you when it's ready!`,
-          mediaUrl: result.taskId // Store task ID for polling
-        };
-      } else {
-        throw new Error('No video data or task ID in response');
-      }
+      // Video generation is async, return task ID for polling
+      const videoMessage = finalReferenceImages.length > 0 
+        ? `🎬 Generating your video with Veo 3 using your uploaded image as reference: "${mediaRequest.cleanPrompt || lastMessage}"\n\nThis may take 30-90 seconds. I'll update you when it's ready!`
+        : `🎬 Generating your video with Veo 3: "${mediaRequest.cleanPrompt || lastMessage}"\n\nThis may take 30-90 seconds. I'll update you when it's ready!`;
+      
+      return {
+        type: 'video',
+        content: videoMessage,
+        mediaUrl: result.taskId // Store task ID for polling
+      };
     }
     
     // Build enhanced system prompt with function calling capabilities

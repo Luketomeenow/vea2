@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNavigate, Link } from "react-router-dom";
+import { useNavigate, Link, useLocation } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,11 +10,14 @@ import { Loader2, UserPlus, Check } from "lucide-react";
 
 const Signup = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { signUp, loading } = useAuth();
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  
+  const aiQuery = (location.state as { aiQuery?: string })?.aiQuery;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -40,7 +43,12 @@ const Signup = () => {
       toast.error(error.message || "Failed to create account");
     } else {
       toast.success("Account created! Welcome to VEA");
-      navigate("/dashboard");
+      // If there was an AI query, navigate to AI Assistant with the query
+      if (aiQuery) {
+        navigate("/ai-assistant", { state: { aiQuery } });
+      } else {
+        navigate("/dashboard");
+      }
     }
   };
 
@@ -159,6 +167,17 @@ const Signup = () => {
 };
 
 export default Signup;
+
+
+
+
+
+
+
+
+
+
+
 
 
 

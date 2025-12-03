@@ -1,10 +1,10 @@
 // Kie.ai API Integration for Image & Video Generation
-// Image: 4O Image API (GPT-4 Turbo with Vision)
+// Image: Nano Banana API (Google's Gemini 2.5 Flash Image Preview)
 // Video: Veo 3 API (Google's Veo 3 model)
-// Documentation: https://docs.kie.ai/
+// Documentation: https://kie.ai/nano-banana
 
 const KIE_API_KEY = import.meta.env.VITE_KIE_API_KEY;
-const KIE_IMAGE_URL = 'https://kieai.erweima.ai/api/v1/gpt4o-image/generate';
+const KIE_IMAGE_URL = 'https://api.kie.ai/api/v1/nano-banana'; // Base Nano Banana endpoint
 const KIE_VIDEO_URL = 'https://api.kie.ai/api/v1/veo/generate'; // Veo 3 API
 
 interface KieResponse {
@@ -16,7 +16,7 @@ interface KieResponse {
 
 // Image Generation using Kie.ai 4O Image API (GPT-4 Turbo with Vision)
 // Excellent quality, takes 50-70 seconds
-export const generateImage = async (prompt: string): Promise<KieResponse> => {
+export const generateImage = async (prompt: string, referenceImages?: string[]): Promise<KieResponse> => {
   try {
     if (!KIE_API_KEY || KIE_API_KEY === 'ADD_YOUR_KIE_API_KEY_HERE') {
       return {
@@ -26,20 +26,43 @@ export const generateImage = async (prompt: string): Promise<KieResponse> => {
     }
 
     console.log('🎨 Generating image with Kie.ai:', prompt);
+    if (referenceImages && referenceImages.length > 0) {
+      console.log('🎨 Using reference images:', referenceImages.length);
+      console.log('🎨 Reference image URLs:', referenceImages.map(img => img.substring(0, 50) + '...'));
+    }
 
-    // Step 1: Submit image generation request
-    const generateResponse = await fetch('https://api.kie.ai/api/v1/gpt4o-image/generate', {
+    // Prepare request body for Nano Banana
+    const requestBody: any = {
+      prompt: prompt,
+      output_format: 'png',
+      image_size: '1:1',
+    };
+
+    // Add reference images if provided
+    if (referenceImages && referenceImages.length > 0) {
+      // Use Nano Banana Edit model for image-to-image generation
+      requestBody.model = 'google/nano-banana-edit';
+      requestBody.image_urls = referenceImages; // Array of image URLs
+      
+      console.log('🎨 Using Nano Banana Edit model with reference images:', referenceImages.length, 'images');
+      console.log('🎨 First reference image:', referenceImages[0].substring(0, 50) + '...');
+    } else {
+      // Use regular Nano Banana model for text-to-image generation
+      requestBody.model = 'google/nano-banana';
+      console.log('🎨 Using Nano Banana model for text-to-image generation');
+    }
+
+    // Log the request body for debugging
+    console.log('🎨 Request body being sent to Kie.ai:', JSON.stringify(requestBody, null, 2));
+
+    // Step 1: Submit image generation request to Nano Banana Edit
+    const generateResponse = await fetch(KIE_IMAGE_URL, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${KIE_API_KEY}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        prompt: prompt,
-        size: '1:1',
-        nVariants: 1,
-        isEnhance: true,
-      }),
+      body: JSON.stringify(requestBody),
     });
 
     if (!generateResponse.ok) {
@@ -49,29 +72,44 @@ export const generateImage = async (prompt: string): Promise<KieResponse> => {
     }
 
     const generateData = await generateResponse.json();
-    console.log('✅ Kie.ai Generation Response:', generateData);
+    console.log('✅ Nano Banana Edit Response:', generateData);
     
-    const taskId = generateData.data?.taskId;
+    // Check if the response contains the image directly (synchronous response)
+    if (generateData.output && generateData.output.length > 0) {
+      const imageUrl = generateData.output[0];
+      console.log('✨ Image generated directly:', imageUrl);
+      return {
+        success: true,
+        data: { url: imageUrl },
+      };
+    }
+    
+    // Check if there's a task ID for async processing
+    const taskId = generateData.taskId || generateData.data?.taskId;
     
     if (!taskId) {
-      throw new Error('No taskId received from Kie.ai');
+      // If no task ID and no direct output, check for error
+      if (generateData.error) {
+        throw new Error(generateData.error);
+      }
+      throw new Error('No taskId or output received from Nano Banana Edit');
     }
     
     console.log('📋 Image taskId:', taskId);
     
-    // Step 2: Poll for result using the correct endpoint: /record-info
+    // Step 2: Poll for result using the correct endpoint
     const maxAttempts = 15; // 150 seconds max (15 * 10 seconds = 2.5 minutes)
     let attempt = 0;
     
     while (attempt < maxAttempts) {
       attempt++;
       
-      // Wait 10 seconds before polling (as recommended in docs)
+      // Wait 10 seconds before polling
       console.log(`⏳ Waiting 10s before checking status (attempt ${attempt}/${maxAttempts})...`);
       await new Promise(resolve => setTimeout(resolve, 10000));
       
       try {
-        const statusUrl = `https://api.kie.ai/api/v1/gpt4o-image/record-info?taskId=${taskId}`;
+        const statusUrl = `https://api.kie.ai/api/v1/nano-banana/record-info?taskId=${taskId}`;
         console.log(`🔍 Checking status: ${statusUrl}`);
         
         const statusResponse = await fetch(statusUrl, {
@@ -99,7 +137,6 @@ export const generateImage = async (prompt: string): Promise<KieResponse> => {
         const progress = taskData.progress;
         
         // successFlag: 0 = generating, 1 = success, 2 = failed
-        // BUT also check if progress is 1.00 (100%) - sometimes successFlag lags behind
         const progressValue = parseFloat(progress);
         const isComplete = successFlag === 1 || progressValue >= 1.0;
         
@@ -110,34 +147,14 @@ export const generateImage = async (prompt: string): Promise<KieResponse> => {
           // Try multiple possible locations for the image URL
           let imageUrl = null;
           
-          // Option 1: response.resultUrls array (camelCase - this is what Kie.ai uses!)
-          if (taskData.response?.resultUrls && taskData.response.resultUrls.length > 0) {
+          if (taskData.response?.output && taskData.response.output.length > 0) {
+            imageUrl = taskData.response.output[0];
+          } else if (taskData.response?.resultUrls && taskData.response.resultUrls.length > 0) {
             imageUrl = taskData.response.resultUrls[0];
-          }
-          // Option 2: response.result_urls array (snake_case - just in case)
-          else if (taskData.response?.result_urls && taskData.response.result_urls.length > 0) {
-            imageUrl = taskData.response.result_urls[0];
-          }
-          // Option 3: response.imageUrl
-          else if (taskData.response?.imageUrl) {
-            imageUrl = taskData.response.imageUrl;
-          }
-          // Option 4: response.url
-          else if (taskData.response?.url) {
+          } else if (taskData.response?.url) {
             imageUrl = taskData.response.url;
-          }
-          // Option 5: response is a string (direct URL)
-          else if (typeof taskData.response === 'string' && taskData.response.startsWith('http')) {
+          } else if (typeof taskData.response === 'string' && taskData.response.startsWith('http')) {
             imageUrl = taskData.response;
-          }
-          // Option 6: Check if response needs to be parsed
-          else if (typeof taskData.response === 'string' && taskData.response.startsWith('{')) {
-            try {
-              const parsed = JSON.parse(taskData.response);
-              imageUrl = parsed.resultUrls?.[0] || parsed.result_urls?.[0] || parsed.imageUrl || parsed.url;
-            } catch (e) {
-              console.error('Failed to parse response string:', e);
-            }
           }
           
           if (imageUrl) {
@@ -147,12 +164,6 @@ export const generateImage = async (prompt: string): Promise<KieResponse> => {
               data: { url: imageUrl },
             };
           } else {
-            // If progress is 100% but no URL yet, wait one more cycle
-            if (progressValue >= 0.93 && attempt < maxAttempts - 1) {
-              console.log('⏳ Progress at 93%+, waiting for final URL...');
-              continue;
-            }
-            
             console.error('❌ Could not find image URL in response. Full response:', taskData.response);
             throw new Error('No image URLs in successful response. Check console for full response data.');
           }
@@ -184,8 +195,8 @@ export const generateImage = async (prompt: string): Promise<KieResponse> => {
   }
 };
 
-// Video Generation using Veo 3 API
-export const generateVideo = async (prompt: string): Promise<KieResponse> => {
+// Video Generation using Veo 3 API with optional image reference
+export const generateVideo = async (prompt: string, referenceImageUrl?: string): Promise<KieResponse> => {
   try {
     if (!KIE_API_KEY || KIE_API_KEY === 'ADD_YOUR_KIE_API_KEY_HERE') {
       return {
@@ -196,19 +207,28 @@ export const generateVideo = async (prompt: string): Promise<KieResponse> => {
 
     console.log('🎬 Generating video with Kie.ai Veo 3:', prompt);
 
+    const requestBody: any = {
+      prompt: prompt,
+      model: 'veo3', // or 'veo3_fast' for faster generation
+      aspectRatio: '16:9',
+      enableFallback: false, // Set to true to enable fallback for edge cases
+      enableTranslation: true, // Auto-translate prompts to English
+    };
+
+    // Add reference image if provided
+    if (referenceImageUrl) {
+      requestBody.inputImage = referenceImageUrl; // Use correct parameter format
+      requestBody.model = 'veo3'; // Ensure correct model
+      console.log('🎬 Using reference image for video generation:', referenceImageUrl);
+    }
+
     const response = await fetch(KIE_VIDEO_URL, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${KIE_API_KEY}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        prompt: prompt,
-        model: 'veo3', // or 'veo3_fast' for faster generation
-        aspectRatio: '16:9',
-        enableFallback: false, // Set to true to enable fallback for edge cases
-        enableTranslation: true, // Auto-translate prompts to English
-      }),
+      body: JSON.stringify(requestBody),
     });
 
     if (!response.ok) {
@@ -328,7 +348,7 @@ export const checkVideoStatus = async (taskId: string): Promise<KieResponse> => 
 };
 
 // Detect if user wants to generate image or video
-export const detectMediaRequest = (message: string): {
+export const detectMediaRequest = (message: string, hasReferenceImages: boolean = false): {
   type: 'text' | 'image' | 'video';
   cleanPrompt?: string;
 } => {
@@ -350,6 +370,36 @@ export const detectMediaRequest = (message: string): {
   
   // Check if message contains action + media type
   const hasAction = actionWords.some(action => lowerMessage.includes(action));
+  
+  // If there are reference images and the message suggests generation, be more aggressive
+  if (hasReferenceImages) {
+    // Check for video request
+    if (hasAction && videoKeywords.some(keyword => lowerMessage.includes(keyword))) {
+      let cleanPrompt = message
+        .replace(/^(can you|could you|please|would you)/gi, '')
+        .replace(/generate|create|make|produce|build|show me/gi, '')
+        .replace(/a?\s*video\s*(of)?/gi, '')
+        .replace(/\?/g, '')
+        .trim();
+      return { type: 'video', cleanPrompt: cleanPrompt || message };
+    }
+    
+    // Check for image request
+    if (hasAction && imageKeywords.some(keyword => lowerMessage.includes(keyword))) {
+      let cleanPrompt = message
+        .replace(/^(can you|could you|please|would you)/gi, '')
+        .replace(/generate|create|make|draw|produce|build|show me/gi, '')
+        .replace(/a?n?\s*(image|picture|photo|illustration|drawing|painting)\s*(of)?/gi, '')
+        .replace(/\?/g, '')
+        .trim();
+      return { type: 'image', cleanPrompt: cleanPrompt || message };
+    }
+    
+    // If there are reference images and the message is short, assume image generation
+    if (message.length < 50 && (hasAction || lowerMessage.includes('this') || lowerMessage.includes('these'))) {
+      return { type: 'image', cleanPrompt: message };
+    }
+  }
   
   // Check for video request
   if (hasAction && videoKeywords.some(keyword => lowerMessage.includes(keyword))) {
@@ -379,10 +429,18 @@ export const detectMediaRequest = (message: string): {
 };
 
 // Enhanced prompts for better results
-export const enhancePrompt = (prompt: string, type: 'image' | 'video'): string => {
+export const enhancePrompt = (prompt: string, type: 'image' | 'video', hasReferenceImage: boolean = false): string => {
   if (type === 'image') {
+    if (hasReferenceImage) {
+      // For image-to-image generation, be more specific about using the reference
+      return `Using the provided reference image as the base, ${prompt}, maintain the style and composition of the reference image, professional quality, high detail, 4k`;
+    }
     return `${prompt}, professional quality, high detail, 4k`;
   } else {
+    if (hasReferenceImage) {
+      // For video generation with reference
+      return `Using the provided reference image as the starting point, ${prompt}, maintain the visual style and elements from the reference, smooth motion, cinematic, high quality, professional video`;
+    }
     // Veo 3 works best with detailed, cinematic prompts
     return `${prompt}, smooth motion, cinematic, high quality, professional video`;
   }

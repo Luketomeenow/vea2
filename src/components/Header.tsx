@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Menu, X } from "lucide-react";
-import veaLogo from "@/assets/vea-logo.png";
+import veaLogo from "@/assets/vea-logo-2.webp";
 
 const Header = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -11,12 +11,9 @@ const Header = () => {
       <div className="container mx-auto px-4 sm:px-6">
         <div className="flex items-center justify-between h-16">
           {/* Logo */}
-          <div className="flex items-center space-x-3 group">
-            <img src={veaLogo} alt="VEA Logo" className="h-8 w-8 transition-transform group-hover:scale-110" />
-            <span className="text-2xl font-bold bg-gradient-to-r from-primary to-primary-light bg-clip-text text-transparent">
-              VEA
-            </span>
-          </div>
+          <a href="/" className="flex items-center space-x-3 group">
+            <img src={veaLogo} alt="VEA Logo" className="h-10 w-auto transition-transform group-hover:scale-110" />
+          </a>
 
           {/* Desktop Navigation */}
           <nav className="hidden md:flex items-center space-x-8">

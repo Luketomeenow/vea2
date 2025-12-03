@@ -1,135 +1,197 @@
-import veaLogo from "@/assets/vea-logo.png";
-import { ChevronRight } from "lucide-react";
+import { useState } from "react";
+import { useNavigate } from "react-router-dom";
+import veaLogo from "@/assets/vea-logo-2.webp";
+import footerBackground from "@/assets/Footer.jpg";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Send, Bot, Youtube, Twitter, Github, Linkedin, Instagram, MessageCircle } from "lucide-react";
+import { useAuth } from "@/hooks/useAuth";
+import DemoAIChat from "@/components/DemoAIChat";
 
 const Footer = () => {
+  const navigate = useNavigate();
+  const { user } = useAuth();
+  const [input, setInput] = useState("");
+  const [isDemoOpen, setIsDemoOpen] = useState(false);
+  const [demoQuery, setDemoQuery] = useState("");
+
+  const sampleQueries = [
+    "How's my business health?",
+    "Show me my projects",
+    "Create a task for Q1 report",
+    "Generate an image of modern office",
+    "What's my revenue trend?",
+    "Show pending invoices",
+  ];
+
+  const handleSend = () => {
+    if (!input.trim()) return;
+    
+    // If user is logged in, go to full AI Assistant
+    if (user) {
+      navigate('/ai-assistant', { state: { aiQuery: input } });
+      return;
+    }
+    
+    // Otherwise, open demo modal
+    setDemoQuery(input);
+    setIsDemoOpen(true);
+    setInput("");
+  };
+
+  const handleSampleQuery = (query: string) => {
+    // If user is logged in, go to full AI Assistant
+    if (user) {
+      navigate('/ai-assistant', { state: { aiQuery: query } });
+      return;
+    }
+    
+    // Otherwise, open demo modal
+    setDemoQuery(query);
+    setIsDemoOpen(true);
+  };
+
   return (
-    <footer className="relative bg-gradient-to-br from-secondary to-background border-t border-border/20">
-      {/* Background Pattern */}
-      <div className="absolute inset-0 opacity-10">
-        <div className="absolute inset-0" style={{
-          backgroundImage: `radial-gradient(circle at 25% 25%, hsl(var(--primary)) 2px, transparent 2px), 
-                           radial-gradient(circle at 75% 75%, hsl(var(--primary)) 1px, transparent 1px)`, 
-          backgroundSize: '50px 50px'
-        }} />
+    <footer className="relative w-full min-h-screen flex flex-col items-center justify-center border-t border-border/20">
+      {/* Background Image */}
+      <div className="absolute inset-0">
+        <img 
+          src={footerBackground} 
+          alt="Footer Background" 
+          className="w-full h-full object-cover"
+        />
+        <div className="absolute inset-0 bg-gradient-to-br from-gray-900/70 via-slate-800/70 to-cyan-900/70" />
       </div>
       
-      <div className="container mx-auto px-4 sm:px-6 py-16 relative">
-        <div className="grid lg:grid-cols-4 md:grid-cols-3 gap-8 mb-12">
-          {/* Logo & Company Info */}
-          <div className="lg:col-span-2">
-            <div className="flex items-center space-x-3 mb-6">
-              <div className="w-12 h-12 rounded-xl bg-gradient-primary flex items-center justify-center shadow-lg">
-                <img src={veaLogo} alt="VEA Logo" className="h-8 w-8 brightness-0 invert" />
-              </div>
-              <span className="text-3xl font-bold text-white">VEA</span>
-            </div>
-            <p className="text-white/80 mb-6 max-w-lg text-lg leading-relaxed">
-              The most qualified Executive Assistant for modern business owners. Transform your operations and dominate your industry with AI-powered insights.
-            </p>
-            
-            {/* Key Stats */}
-            <div className="grid grid-cols-3 gap-4 mb-6">
-              <div className="text-center p-4 rounded-xl bg-card/50 border border-border/30">
-                <div className="text-2xl font-bold text-primary">10K+</div>
-                <div className="text-xs text-white/70">Active Users</div>
-              </div>
-              <div className="text-center p-4 rounded-xl bg-card/50 border border-border/30">
-                <div className="text-2xl font-bold text-primary">99.9%</div>
-                <div className="text-xs text-white/70">Uptime</div>
-              </div>
-              <div className="text-center p-4 rounded-xl bg-card/50 border border-border/30">
-                <div className="text-2xl font-bold text-primary">24/7</div>
-                <div className="text-xs text-white/70">Support</div>
-              </div>
-            </div>
+      <div className="relative w-full px-4 sm:px-6 py-24 flex flex-col items-center justify-center flex-1">
+        {/* VEA Logo */}
+        <div className="mb-16 text-center">
+          <div className="flex items-center justify-center mb-6">
+            <img src={veaLogo} alt="VEA Logo" className="h-20 w-auto" />
           </div>
+          <p className="text-gray-400 text-lg">Your Virtual Executive Assistant</p>
+        </div>
 
-          {/* Quick Links */}
-          <div>
-            <h4 className="font-bold mb-6 text-white text-lg flex items-center">
-              <div className="w-2 h-6 bg-gradient-primary rounded-full mr-3" />
-              Product
-            </h4>
-            <ul className="space-y-3">
-              {[
-                { label: "Features", href: "#features" },
-                { label: "Pricing", href: "#pricing" },
-                { label: "Demo", href: "#" },
-                { label: "API Docs", href: "#" },
-                { label: "Integrations", href: "#" }
-              ].map((link) => (
-                <li key={link.label}>
-                  <a 
-                    href={link.href} 
-                    className="text-white/70 hover:text-primary transition-all duration-300 hover:translate-x-1 inline-block group"
-                  >
-                    <span className="flex items-center">
-                      {link.label}
-                      <ChevronRight className="w-4 h-4 ml-1 opacity-0 group-hover:opacity-100 transition-opacity" />
-                    </span>
-                  </a>
-                </li>
-              ))}
-            </ul>
-          </div>
+        {/* AI Chat Input */}
+        <div className="max-w-3xl w-full mx-auto mb-16">
+          <div className="relative bg-white/95 backdrop-blur-xl rounded-3xl border-2 border-cyan-200/50 shadow-2xl overflow-hidden">
+              <div className="p-8">
+              <div className="flex items-center space-x-4 mb-5">
+                <div className="p-3 bg-gradient-to-br from-cyan-500 to-blue-600 rounded-2xl shadow-lg">
+                  <Bot className="w-6 h-6 text-white" />
+                </div>
+                <Input
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  placeholder="What can I build for you today?"
+                  onKeyPress={(e) => e.key === 'Enter' && handleSend()}
+                  className="flex-1 bg-gray-50 border-2 border-gray-200 text-gray-900 placeholder:text-gray-500 text-lg h-16 px-6 rounded-2xl focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500 transition-all"
+                />
+                <Button 
+                  onClick={handleSend}
+                  disabled={!input.trim()}
+                  size="lg"
+                  className="bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 text-white h-16 px-10 rounded-2xl shadow-lg hover:shadow-xl transition-all"
+                >
+                  <Send className="w-5 h-5" />
+                </Button>
+              </div>
 
-          {/* Support */}
-          <div>
-            <h4 className="font-bold mb-6 text-white text-lg flex items-center">
-              <div className="w-2 h-6 bg-gradient-primary rounded-full mr-3" />
-              Support
-            </h4>
-            <ul className="space-y-3">
-              {[
-                { label: "Contact Us", href: "#contact" },
-                { label: "Help Center", href: "#" },
-                { label: "Community", href: "#" },
-                { label: "Status Page", href: "#" },
-                { label: "Bug Reports", href: "#" }
-              ].map((link) => (
-                <li key={link.label}>
-                  <a 
-                    href={link.href} 
-                    className="text-white/70 hover:text-primary transition-all duration-300 hover:translate-x-1 inline-block group"
+              {/* Sample Queries */}
+              <div className="flex flex-wrap gap-2 justify-center">
+                {sampleQueries.map((query, index) => (
+                  <Button
+                    key={index}
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => handleSampleQuery(query)}
+                    className="text-sm bg-gradient-to-r from-cyan-50 to-blue-50 hover:from-cyan-100 hover:to-blue-100 text-gray-700 border-2 border-cyan-200/50 hover:border-cyan-300 rounded-full px-4 py-2 transition-all hover:shadow-md"
                   >
-                    <span className="flex items-center">
-                      {link.label}
-                      <ChevronRight className="w-4 h-4 ml-1 opacity-0 group-hover:opacity-100 transition-opacity" />
-                    </span>
-                  </a>
-                </li>
-              ))}
-            </ul>
+                    {query}
+                  </Button>
+                ))}
+              </div>
+            </div>
           </div>
         </div>
 
-        {/* Bottom Bar */}
-        <div className="border-t border-border/30 pt-8">
-          <div className="flex flex-col lg:flex-row justify-between items-center gap-4">
-            <div className="text-white/70">
-              <p className="text-sm">© 2024 VEA. All rights reserved.</p>
-              <p className="text-xs mt-1">Built for business owners, by business owners.</p>
-            </div>
-            
-            <div className="flex items-center space-x-6">
-              {[
-                { label: "Privacy Policy", href: "#" },
-                { label: "Terms of Service", href: "#" },
-                { label: "Security", href: "#" },
-                { label: "Changelog", href: "#" }
-              ].map((link) => (
-                <a 
-                  key={link.label}
-                  href={link.href} 
-                  className="text-sm text-white/70 hover:text-primary transition-colors duration-300 hover:underline"
-                >
-                  {link.label}
-                </a>
-              ))}
-            </div>
+        {/* Social Icons & Links */}
+        <div className="flex flex-col items-center space-y-6">
+          {/* Social Icons */}
+          <div className="flex items-center space-x-4">
+            <a 
+              href="https://youtube.com" 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-all"
+            >
+              <Youtube className="w-5 h-5 text-white" />
+            </a>
+            <a 
+              href="https://twitter.com" 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-all"
+            >
+              <Twitter className="w-5 h-5 text-white" />
+            </a>
+            <a 
+              href="https://github.com" 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-all"
+            >
+              <Github className="w-5 h-5 text-white" />
+            </a>
+            <a 
+              href="https://linkedin.com" 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-all"
+            >
+              <Linkedin className="w-5 h-5 text-white" />
+            </a>
+            <a 
+              href="https://instagram.com" 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-all"
+            >
+              <Instagram className="w-5 h-5 text-white" />
+            </a>
+            <a 
+              href="#" 
+              className="w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-all"
+            >
+              <MessageCircle className="w-5 h-5 text-white" />
+            </a>
           </div>
+
+          {/* Terms & Privacy */}
+          <div className="flex items-center space-x-4 text-sm">
+            <span className="text-gray-500">|</span>
+            <a href="#terms" className="text-gray-400 hover:text-white transition-colors">
+              Terms
+            </a>
+            <a href="#privacy" className="text-gray-400 hover:text-white transition-colors">
+              Privacy
+            </a>
+          </div>
+
+          {/* Copyright */}
+          <p className="text-gray-500 text-sm">© 2025 VEA. All rights reserved.</p>
         </div>
       </div>
+
+      {/* Demo AI Chat Modal */}
+      <DemoAIChat 
+        isOpen={isDemoOpen} 
+        onClose={() => {
+          setIsDemoOpen(false);
+          setDemoQuery("");
+        }}
+        initialQuery={demoQuery}
+      />
     </footer>
   );
 };

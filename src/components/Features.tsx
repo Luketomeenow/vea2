@@ -105,20 +105,20 @@ const Features = () => {
   return (
     <section 
       id="features" 
-      className="py-24 bg-gradient-to-br from-background to-muted/30 overflow-hidden"
+      className="py-24 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 overflow-hidden"
       onMouseEnter={() => setIsHovering(true)}
       onMouseLeave={() => setIsHovering(false)}
     >
       <div className="container mx-auto px-4 sm:px-6">
         {/* Section Header */}
         <div className="text-center mb-16 animate-fade-in-up">
-          <h2 className="text-3xl md:text-4xl lg:text-5xl font-bold mb-6 text-foreground">
+          <h2 className="text-3xl md:text-4xl lg:text-5xl font-bold mb-6 text-white">
             Everything You Need to
-            <span className="block bg-gradient-primary bg-clip-text text-transparent">
+            <span className="block bg-gradient-to-r from-cyan-400 to-blue-400 bg-clip-text text-transparent">
               Dominate Your Industry
             </span>
           </h2>
-          <p className="text-xl text-muted-foreground max-w-3xl mx-auto">
+          <p className="text-xl text-gray-300 max-w-3xl mx-auto">
             VEA isn't just software—it's your strategic advantage. Every feature is designed to give you the executive insights that separate industry leaders from the competition.
           </p>
         </div>
@@ -135,16 +135,19 @@ const Features = () => {
                 const Icon = feature.icon;
                 return (
                   <CarouselItem key={feature.title} className="md:basis-1/2 lg:basis-1/3">
-                    <div className="feature-card h-full will-change-transform">
-                      <div className="feature-icon">
-                        <Icon className="w-6 h-6 text-white" />
+                    <div className="relative bg-white/5 backdrop-blur-xl rounded-2xl p-6 border border-white/10 hover:border-cyan-400/50 transition-all duration-300 hover:scale-105 h-full will-change-transform group">
+                      <div className="absolute inset-0 bg-gradient-to-br from-white/5 via-transparent to-transparent rounded-2xl pointer-events-none" />
+                      <div className="relative">
+                        <div className="w-12 h-12 bg-gradient-to-br from-cyan-500 to-blue-600 rounded-xl flex items-center justify-center mb-4 shadow-lg">
+                          <Icon className="w-6 h-6 text-white" />
+                        </div>
+                        <h3 className="text-xl font-semibold mb-3 group-hover:text-cyan-400 transition-colors text-white">
+                          {feature.title}
+                        </h3>
+                        <p className="text-gray-300 leading-relaxed">
+                          {feature.description}
+                        </p>
                       </div>
-                      <h3 className="text-xl font-semibold mb-3 group-hover:text-primary transition-colors text-foreground">
-                        {feature.title}
-                      </h3>
-                      <p className="text-muted-foreground leading-relaxed">
-                        {feature.description}
-                      </p>
                     </div>
                   </CarouselItem>
                 );
@@ -164,14 +167,14 @@ const Features = () => {
 
         {/* Bottom CTA */}
         <div className="text-center mt-16 animate-fade-in-up">
-          <div className="bg-gradient-feature rounded-2xl p-8 border border-white/10">
+          <div className="bg-gradient-to-r from-cyan-400/10 to-blue-500/10 rounded-2xl p-8 border border-cyan-400/20">
             <h3 className="text-2xl md:text-3xl font-bold mb-4 text-white">
               Ready to Transform Your Business?
             </h3>
-            <p className="text-white/80 mb-6 max-w-2xl mx-auto">
+            <p className="text-gray-300 mb-6 max-w-2xl mx-auto">
               Join thousands of successful entrepreneurs who've already discovered their secret weapon.
             </p>
-            <button className="cta-primary">
+            <button className="bg-gradient-to-r from-cyan-400 to-blue-500 hover:from-cyan-500 hover:to-blue-600 text-white font-semibold px-8 py-4 rounded-xl transition-all duration-300 transform hover:scale-105">
               Start Your Transformation Today
             </button>
           </div>

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNavigate, Link } from "react-router-dom";
+import { useNavigate, Link, useLocation } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,9 +10,12 @@ import { Loader2, LogIn } from "lucide-react";
 
 const Login = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { signIn, loading } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  
+  const aiQuery = (location.state as { aiQuery?: string })?.aiQuery;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -38,7 +41,12 @@ const Login = () => {
       }
     } else {
       toast.success("Welcome back!");
-      navigate("/dashboard");
+      // If there was an AI query, navigate to AI Assistant with the query
+      if (aiQuery) {
+        navigate("/ai-assistant", { state: { aiQuery } });
+      } else {
+        navigate("/dashboard");
+      }
     }
   };
 
