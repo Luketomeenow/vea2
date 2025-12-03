@@ -25,3 +25,8 @@ dist-ssr
 
 # Database backups
 src/assets/home/dbbackups/
+
+# Environment variables
+.env
+.env.local
+.env.*.local
