@@ -69,7 +69,7 @@ const Footer = () => {
           <div className="flex items-center justify-center mb-6">
             <img src={veaLogo} alt="VEA Logo" className="h-20 w-auto" />
           </div>
-          <p className="text-gray-400 text-lg">Your Virtual Executive Assistant</p>
+          <p className="text-gray-400 text-lg">Virtual Executive Assistant</p>
         </div>
 
         {/* AI Chat Input */}

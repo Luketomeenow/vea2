@@ -95,9 +95,9 @@ const Hero = () => {
               </div>
             </div>
             
-            <div className="relative bg-white/10 backdrop-blur-2xl rounded-3xl border border-white/20 shadow-2xl overflow-hidden">
+            <div className="relative bg-white/20 backdrop-blur-2xl rounded-3xl border border-white/30 shadow-2xl overflow-hidden">
               {/* Glass morphism shine effect */}
-              <div className="absolute inset-0 bg-gradient-to-br from-white/20 via-white/5 to-transparent pointer-events-none" />
+              <div className="absolute inset-0 bg-gradient-to-br from-white/30 via-white/10 to-transparent pointer-events-none" />
 
               <div className="p-8 relative">
                 <div className="flex items-center space-x-4 mb-5">
@@ -141,8 +141,8 @@ const Hero = () => {
 
           {/* Key Features Grid */}
           <div className="grid md:grid-cols-3 gap-6 max-w-4xl mx-auto mb-8 animate-fade-in-up" style={{ animationDelay: '0.4s' }}>
-            <div className="relative bg-white/10 backdrop-blur-xl rounded-2xl p-6 border border-white/20 hover:border-white/40 hover:shadow-2xl transition-all hover:scale-105 group">
-              <div className="absolute inset-0 bg-gradient-to-br from-white/10 via-transparent to-transparent rounded-2xl pointer-events-none" />
+            <div className="relative bg-white/15 backdrop-blur-xl rounded-2xl p-6 border border-white/30 hover:border-white/40 hover:shadow-2xl transition-all hover:scale-105 group">
+              <div className="absolute inset-0 bg-gradient-to-br from-white/15 via-transparent to-transparent rounded-2xl pointer-events-none" />
               <div className="relative">
                 <div className="w-14 h-14 bg-gradient-to-br from-cyan-500 to-blue-600 rounded-2xl flex items-center justify-center mb-4 mx-auto shadow-lg">
                   <TrendingUp className="w-7 h-7 text-white" />
@@ -152,8 +152,8 @@ const Hero = () => {
               </div>
             </div>
 
-            <div className="relative bg-white/10 backdrop-blur-xl rounded-2xl p-6 border border-white/20 hover:border-white/40 hover:shadow-2xl transition-all hover:scale-105 group">
-              <div className="absolute inset-0 bg-gradient-to-br from-white/10 via-transparent to-transparent rounded-2xl pointer-events-none" />
+            <div className="relative bg-white/15 backdrop-blur-xl rounded-2xl p-6 border border-white/30 hover:border-white/40 hover:shadow-2xl transition-all hover:scale-105 group">
+              <div className="absolute inset-0 bg-gradient-to-br from-white/15 via-transparent to-transparent rounded-2xl pointer-events-none" />
               <div className="relative">
                 <div className="w-14 h-14 bg-gradient-to-br from-cyan-500 to-blue-600 rounded-2xl flex items-center justify-center mb-4 mx-auto shadow-lg">
                   <Zap className="w-7 h-7 text-white" />
@@ -163,8 +163,8 @@ const Hero = () => {
               </div>
             </div>
 
-            <div className="relative bg-white/10 backdrop-blur-xl rounded-2xl p-6 border border-white/20 hover:border-white/40 hover:shadow-2xl transition-all hover:scale-105 group">
-              <div className="absolute inset-0 bg-gradient-to-br from-white/10 via-transparent to-transparent rounded-2xl pointer-events-none" />
+            <div className="relative bg-white/15 backdrop-blur-xl rounded-2xl p-6 border border-white/30 hover:border-white/40 hover:shadow-2xl transition-all hover:scale-105 group">
+              <div className="absolute inset-0 bg-gradient-to-br from-white/15 via-transparent to-transparent rounded-2xl pointer-events-none" />
               <div className="relative">
                 <div className="w-14 h-14 bg-gradient-to-br from-cyan-500 to-blue-600 rounded-2xl flex items-center justify-center mb-4 mx-auto shadow-lg">
                   <Users className="w-7 h-7 text-white" />
