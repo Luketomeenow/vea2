@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useNavigate } from "react-router-dom";
 import { MessageContent } from "@/components/dashboard/MessageContent";
+import { generateRAGResponse } from "@/services/ragService";
 
 interface Message {
   id: string;
@@ -69,123 +70,33 @@ const DemoAIChat = ({ isOpen, onClose, initialQuery }: DemoAIChatProps) => {
     setIsTyping(true);
 
     try {
-      // Call n8n webhook (Production)
-      const N8N_WEBHOOK_URL = 'https://veaai.app.n8n.cloud/webhook/2cf27f74-6eb7-4bb4-94e9-c03388270e89';
+      // Build conversation history for context
+      const conversationHistory = messages.slice(-5).map(msg => ({
+        role: msg.role as 'user' | 'assistant',
+        content: msg.content
+      }));
+
+      // Use the RAG Edge Function (handles Pinecone + OpenAI server-side)
+      console.log('🚀 Calling RAG Edge Function...');
+      const response = await generateRAGResponse(message, conversationHistory);
       
-      // Generate a demo session ID (persists for this chat session)
-      const sessionId = sessionStorage.getItem('demo-chat-session') || `demo-${Date.now()}`;
-      sessionStorage.setItem('demo-chat-session', sessionId);
-
-      console.log('🚀 Sending to n8n:', {
-        url: N8N_WEBHOOK_URL,
-        payload: { message, sessionId }
-      });
-
-      // Create AbortController with 5 minute timeout for long-running n8n workflows
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 300000); // 5 minutes
-
-      const response = await fetch(N8N_WEBHOOK_URL, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          message: message,
-          sessionId: sessionId
-        }),
-        signal: controller.signal
-      });
-
-      clearTimeout(timeoutId);
-
-      console.log('📡 n8n Response status:', response.status);
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error('❌ n8n Error response:', errorText);
-        throw new Error(`n8n responded with ${response.status}: ${errorText}`);
-      }
-
-      const data = await response.json();
-      console.log('✅ n8n Response data:', data);
-      console.log('✅ n8n Response type:', Array.isArray(data) ? 'Array' : typeof data);
-      console.log('✅ n8n Response structure:', JSON.stringify(data, null, 2));
-      
-      // Handle different response formats
-      let aiResponse = '';
-      let imageUrls: string[] = [];
-      
-      if (Array.isArray(data)) {
-        // If it's an array, try to extract the message
-        console.log('📦 Response is an array, extracting...');
-        const firstItem = data[0];
-        console.log('📦 First item:', firstItem);
-        
-        // Check for images/files from Code Interpreter
-        if (firstItem?.images) {
-          imageUrls = Array.isArray(firstItem.images) ? firstItem.images : [firstItem.images];
-        } else if (firstItem?.files) {
-          imageUrls = Array.isArray(firstItem.files) ? firstItem.files : [firstItem.files];
-        }
-        
-        // Try different possible field names
-        aiResponse = firstItem?.message || firstItem?.output || firstItem?.text || firstItem?.content || firstItem?.response || JSON.stringify(firstItem);
-      } else {
-        // Check for images/files in the response
-        if (data?.images) {
-          imageUrls = Array.isArray(data.images) ? data.images : [data.images];
-        } else if (data?.files) {
-          imageUrls = Array.isArray(data.files) ? data.files : [data.files];
-        }
-        
-        aiResponse = data?.message || data?.output || data?.text;
-        
-        if (!aiResponse) {
-          console.error('❌ No recognized message field in response:', data);
-          throw new Error('No response from AI - unexpected format');
-        }
-      }
-
-      // If there are images from Code Interpreter, append them to the response
-      if (imageUrls.length > 0) {
-        console.log('📊 Found Code Interpreter outputs:', imageUrls);
-        aiResponse += '\n\n';
-        imageUrls.forEach((url, index) => {
-          aiResponse += `![Generated Graph ${index + 1}](${url})\n`;
-        });
-      }
-
-      console.log('💬 Extracted message:', aiResponse);
+      console.log(`✅ Response received (${response.ragResults || 0} RAG chunks, mode: ${response.mode})`);
 
       const aiMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
-        content: aiResponse,
+        content: response.message,
         timestamp: new Date(),
       };
 
       setMessages(prev => [...prev, aiMessage]);
     } catch (error: any) {
       console.error('❌ AI Error:', error);
-      console.error('❌ Error details:', {
-        message: error.message,
-        stack: error.stack,
-        name: error.name
-      });
-      
-      // Determine error type and show appropriate message
-      let errorContent = '';
-      if (error.name === 'AbortError') {
-        errorContent = `⏱️ Request Timeout\n\nThe AI is still processing your request but it's taking longer than expected. This can happen with complex queries.\n\nPlease wait a moment and try again, or try a simpler question.`;
-      } else {
-        errorContent = `⚠️ Connection Error: ${error.message}\n\nPlease check:\n1. Your n8n workflow is active\n2. CORS is enabled in n8n webhook settings\n3. The webhook is returning a JSON response with a "message" field\n\nCheck the browser console for more details.`;
-      }
       
       const errorMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
-        content: errorContent,
+        content: `⚠️ Error: ${error.message}\n\nPlease try again or check the console for details.`,
         timestamp: new Date(),
       };
 
@@ -350,4 +261,5 @@ const DemoAIChat = ({ isOpen, onClose, initialQuery }: DemoAIChatProps) => {
 };
 
 export default DemoAIChat;
+
 

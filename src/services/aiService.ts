@@ -1,8 +1,9 @@
 import { supabase } from '@/lib/supabase';
 import { detectMediaRequest, generateImage, generateVideo, enhancePrompt, checkVideoStatus } from './kieService';
 import { AI_FUNCTIONS, executeFunctionCall } from './aiFunctionsService';
+import { generateRAGResponse } from './ragService';
 
-// n8n AI Agent Webhook URL (Production)
+// n8n AI Agent Webhook URL (Production) - Fallback
 const N8N_WEBHOOK_URL = 'https://veaai.app.n8n.cloud/webhook/2cf27f74-6eb7-4bb4-94e9-c03388270e89';
 
 export interface ChatMessage {
@@ -17,6 +18,7 @@ export interface MediaContent {
   url: string;
   prompt: string;
 }
+
 
 export const generateAIResponse = async (
   messages: ChatMessage[],
@@ -140,101 +142,61 @@ Users can ask for images or videos and you'll handle it automatically.
 - Keep responses concise (under 200 words) unless detail is requested
 - Always prioritize using functions to provide real data over generic advice`;
 
-    // Handle Text Chat with n8n webhook (default)
-    // Generate or retrieve session ID
-    const sessionId = userId || `session-${Date.now()}`;
-    
     // Get just the current user message (last message in the array)
     const currentUserMessage = messages[messages.length - 1]?.content || '';
     
-    console.log('🚀 Sending to n8n:', {
-      url: N8N_WEBHOOK_URL,
-      payload: { message: currentUserMessage, sessionId }
-    });
-    
-    // Create AbortController with 5 minute timeout for long-running n8n workflows
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 300000); // 5 minutes
-
-    const response = await fetch(N8N_WEBHOOK_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        message: currentUserMessage,
-        sessionId
-      }),
-      signal: controller.signal
-    });
-
-    clearTimeout(timeoutId);
-
-    console.log('📡 n8n Response status:', response.status);
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('❌ n8n webhook error:', response.status, errorText);
-      throw new Error(`AI service error: ${response.statusText || 'Connection failed'}`);
-    }
-
-    const data = await response.json();
-    console.log('✅ n8n Response data:', data);
-    console.log('✅ n8n Response type:', Array.isArray(data) ? 'Array' : typeof data);
-
-    if (data?.error) {
-      console.error('❌ n8n webhook returned error:', data.error);
-      throw new Error(data.error);
-    }
-
-    // Handle different response formats
     let aiResponse = '';
-    let imageUrls: string[] = [];
+
+    // Build conversation history for context
+    const conversationHistory = messages.slice(-5).map(msg => ({
+      role: msg.role as 'user' | 'assistant',
+      content: msg.content
+    }));
+
+    // Use RAG Edge Function (handles Pinecone + OpenAI server-side)
+    console.log('🚀 Calling RAG Edge Function...');
     
-    if (Array.isArray(data)) {
-      // If it's an array, try to extract the message
-      console.log('📦 Response is an array, extracting...');
-      const firstItem = data[0];
+    try {
+      const ragResult = await generateRAGResponse(currentUserMessage, conversationHistory);
+      aiResponse = ragResult.message;
+      console.log(`✅ RAG Response received (${ragResult.ragResults || 0} chunks, mode: ${ragResult.mode})`);
+    } catch (ragError: any) {
+      console.warn('⚠️ RAG Edge Function failed, falling back to n8n:', ragError.message);
       
-      // Check for images/files from Code Interpreter
-      if (firstItem?.images) {
-        imageUrls = Array.isArray(firstItem.images) ? firstItem.images : [firstItem.images];
-      } else if (firstItem?.files) {
-        imageUrls = Array.isArray(firstItem.files) ? firstItem.files : [firstItem.files];
-      }
+      // Fallback to n8n webhook
+      const sessionId = userId || `session-${Date.now()}`;
       
-      aiResponse = firstItem?.message || firstItem?.output || firstItem?.text || firstItem?.content || firstItem?.response;
-      
-      if (!aiResponse) {
-        console.error('❌ No recognized message field in array response:', data);
-        throw new Error('No response from AI service');
-      }
-    } else {
-      // Check for images/files in the response
-      if (data?.images) {
-        imageUrls = Array.isArray(data.images) ? data.images : [data.images];
-      } else if (data?.files) {
-        imageUrls = Array.isArray(data.files) ? data.files : [data.files];
-      }
-      
-      aiResponse = data?.message || data?.output || data?.text || data?.content;
-      
-      if (!aiResponse) {
-        console.error('❌ No message field in response:', data);
-        throw new Error('No response from AI service');
-      }
-    }
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 300000); // 5 minutes
 
-    // If there are images from Code Interpreter, append them to the response
-    if (imageUrls.length > 0) {
-      console.log('📊 Found Code Interpreter outputs:', imageUrls);
-      aiResponse += '\n\n';
-      imageUrls.forEach((url, index) => {
-        aiResponse += `![Generated Graph ${index + 1}](${url})\n`;
+      const response = await fetch(N8N_WEBHOOK_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: currentUserMessage, sessionId }),
+        signal: controller.signal
       });
+
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        throw new Error(`AI service error: ${response.statusText || 'Connection failed'}`);
+      }
+
+      const data = await response.json();
+      
+      if (Array.isArray(data)) {
+        const firstItem = data[0];
+        aiResponse = firstItem?.message || firstItem?.output || firstItem?.text || firstItem?.content || '';
+      } else {
+        aiResponse = data?.message || data?.output || data?.text || data?.content || '';
+      }
+      
+      if (!aiResponse) {
+        throw new Error('No response from AI service');
+      }
     }
 
-    console.log('💬 Extracted message:', aiResponse);
+    console.log('💬 AI Response:', aiResponse.substring(0, 200) + '...');
 
     // Clean up the response - remove asterisks and format properly
     let cleanContent = aiResponse
