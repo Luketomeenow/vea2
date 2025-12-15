@@ -3,6 +3,7 @@ import { X, Send, Bot, Sparkles, Loader2, ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useNavigate } from "react-router-dom";
+import { MessageContent } from "@/components/dashboard/MessageContent";
 
 interface Message {
   id: string;
@@ -53,37 +54,6 @@ const DemoAIChat = ({ isOpen, onClose, initialQuery }: DemoAIChatProps) => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  const getDemoResponse = (userMessage: string): string => {
-    const lowerMessage = userMessage.toLowerCase();
-
-    if (lowerMessage.includes('pricing') || lowerMessage.includes('cost') || lowerMessage.includes('price')) {
-      return "💰 **VEA Pricing Plans:**\n\n**Starter** - $14.90/month\n• Customer Database\n• Smart Tickets\n• Calendar & Appointments\n\n**VEA Executive** - $29.90/month (Most Popular)\n• Real-time Strategy Insights\n• Full Customer Database\n• Smart Tickets & Work Orders\n• B2B Contacts & Assets\n\n**Enterprise** - Custom pricing\n• Dedicated Success Manager\n• SSO & Advanced Security\n• Custom Integrations\n\n🎉 **14-day free trial available!** No credit card required.";
-    }
-
-    if (lowerMessage.includes('feature') || lowerMessage.includes('what') || lowerMessage.includes('capabilities')) {
-      return "🚀 **VEA Core Features:**\n\n📊 **Strategy Insights** - Real-time analytics and business intelligence\n\n👥 **Customer Database** - Centralized customer information with linked assets\n\n🎫 **Smart Tickets** - Collaborative work orders with real-time tracking\n\n📅 **Appointments** - Built-in calendar for seamless scheduling\n\n💼 **B2B Contacts** - Manage corporate clients effectively\n\n⚡ **AI-Powered** - Intelligent automation and insights\n\n✨ Plus much more! Would you like to know about any specific feature?";
-    }
-
-    if (lowerMessage.includes('how') && (lowerMessage.includes('work') || lowerMessage.includes('ai'))) {
-      return "🤖 **How VEA Works:**\n\n**1. One Prompt In** → Describe your needs in plain English\n\n**2. AI Analysis** → VEA understands your business context and requirements\n\n**3. Smart Setup** → Automatic configuration and customization\n\n**4. Launch** → Start using VEA immediately, no technical knowledge required\n\n**AI Assistance includes:**\n• Automated data analysis\n• Intelligent recommendations\n• Task prioritization\n• Business insights\n• Predictive analytics\n\nIt's like having a senior executive on your team 24/7!";
-    }
-
-    if (lowerMessage.includes('success') || lowerMessage.includes('result') || lowerMessage.includes('testimonial')) {
-      return "⭐ **VEA Success Stories:**\n\n📈 **Average Results:**\n• 47% revenue increase\n• 85% time savings\n• 99.9% customer satisfaction\n\n💬 **What users say:**\n\n\"VEA transformed our business operations completely. We've seen incredible growth in just 3 months!\" - Sarah J., CEO\n\n\"The AI insights are game-changing. It's like having a seasoned advisor available 24/7.\" - Michael C., Founder\n\n🌟 Trusted by 10,000+ business owners in 180+ countries!";
-    }
-
-    if (lowerMessage.includes('start') || lowerMessage.includes('trial') || lowerMessage.includes('signup') || lowerMessage.includes('sign up')) {
-      return "🎉 **Ready to Get Started?**\n\n✅ **14-day free trial** - No credit card required\n✅ **No contracts** - Cancel anytime\n✅ **Instant setup** - Start in minutes\n\n**What you'll get:**\n• Full access to all features\n• Personalized onboarding\n• 24/7 support\n• AI-powered insights\n\nClick the button below to start your transformation today! 🚀";
-    }
-
-    if (lowerMessage.includes('help') || lowerMessage.includes('support')) {
-      return "💬 **VEA Support:**\n\n📧 **Email:** support@vea.ai\n📞 **Phone:** 1-800-VEA-HELP\n🌍 **Available:** Worldwide, 24/7\n\n**We offer:**\n• Live chat support\n• Video call assistance\n• Comprehensive documentation\n• Community forums\n• Onboarding sessions\n\nOur team is always ready to help you succeed!";
-    }
-
-    // Default response
-    return "I'd be happy to help you learn more about VEA! 😊\n\n**Popular topics:**\n• Features and capabilities\n• Pricing and plans\n• How VEA works\n• Success stories\n• Getting started\n\nWhat specific aspect of VEA interests you most? Or feel free to ask me anything!";
-  };
-
   const handleSend = async (message: string = input) => {
     if (!message.trim()) return;
 
@@ -98,19 +68,131 @@ const DemoAIChat = ({ isOpen, onClose, initialQuery }: DemoAIChatProps) => {
     setInput("");
     setIsTyping(true);
 
-    // Simulate AI thinking time
-    setTimeout(() => {
-      const response = getDemoResponse(message);
+    try {
+      // Call n8n webhook (Production)
+      const N8N_WEBHOOK_URL = 'https://veaai.app.n8n.cloud/webhook/2cf27f74-6eb7-4bb4-94e9-c03388270e89';
+      
+      // Generate a demo session ID (persists for this chat session)
+      const sessionId = sessionStorage.getItem('demo-chat-session') || `demo-${Date.now()}`;
+      sessionStorage.setItem('demo-chat-session', sessionId);
+
+      console.log('🚀 Sending to n8n:', {
+        url: N8N_WEBHOOK_URL,
+        payload: { message, sessionId }
+      });
+
+      // Create AbortController with 5 minute timeout for long-running n8n workflows
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 300000); // 5 minutes
+
+      const response = await fetch(N8N_WEBHOOK_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          message: message,
+          sessionId: sessionId
+        }),
+        signal: controller.signal
+      });
+
+      clearTimeout(timeoutId);
+
+      console.log('📡 n8n Response status:', response.status);
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('❌ n8n Error response:', errorText);
+        throw new Error(`n8n responded with ${response.status}: ${errorText}`);
+      }
+
+      const data = await response.json();
+      console.log('✅ n8n Response data:', data);
+      console.log('✅ n8n Response type:', Array.isArray(data) ? 'Array' : typeof data);
+      console.log('✅ n8n Response structure:', JSON.stringify(data, null, 2));
+      
+      // Handle different response formats
+      let aiResponse = '';
+      let imageUrls: string[] = [];
+      
+      if (Array.isArray(data)) {
+        // If it's an array, try to extract the message
+        console.log('📦 Response is an array, extracting...');
+        const firstItem = data[0];
+        console.log('📦 First item:', firstItem);
+        
+        // Check for images/files from Code Interpreter
+        if (firstItem?.images) {
+          imageUrls = Array.isArray(firstItem.images) ? firstItem.images : [firstItem.images];
+        } else if (firstItem?.files) {
+          imageUrls = Array.isArray(firstItem.files) ? firstItem.files : [firstItem.files];
+        }
+        
+        // Try different possible field names
+        aiResponse = firstItem?.message || firstItem?.output || firstItem?.text || firstItem?.content || firstItem?.response || JSON.stringify(firstItem);
+      } else {
+        // Check for images/files in the response
+        if (data?.images) {
+          imageUrls = Array.isArray(data.images) ? data.images : [data.images];
+        } else if (data?.files) {
+          imageUrls = Array.isArray(data.files) ? data.files : [data.files];
+        }
+        
+        aiResponse = data?.message || data?.output || data?.text;
+        
+        if (!aiResponse) {
+          console.error('❌ No recognized message field in response:', data);
+          throw new Error('No response from AI - unexpected format');
+        }
+      }
+
+      // If there are images from Code Interpreter, append them to the response
+      if (imageUrls.length > 0) {
+        console.log('📊 Found Code Interpreter outputs:', imageUrls);
+        aiResponse += '\n\n';
+        imageUrls.forEach((url, index) => {
+          aiResponse += `![Generated Graph ${index + 1}](${url})\n`;
+        });
+      }
+
+      console.log('💬 Extracted message:', aiResponse);
+
       const aiMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
-        content: response,
+        content: aiResponse,
         timestamp: new Date(),
       };
 
       setMessages(prev => [...prev, aiMessage]);
+    } catch (error: any) {
+      console.error('❌ AI Error:', error);
+      console.error('❌ Error details:', {
+        message: error.message,
+        stack: error.stack,
+        name: error.name
+      });
+      
+      // Determine error type and show appropriate message
+      let errorContent = '';
+      if (error.name === 'AbortError') {
+        errorContent = `⏱️ Request Timeout\n\nThe AI is still processing your request but it's taking longer than expected. This can happen with complex queries.\n\nPlease wait a moment and try again, or try a simpler question.`;
+      } else {
+        errorContent = `⚠️ Connection Error: ${error.message}\n\nPlease check:\n1. Your n8n workflow is active\n2. CORS is enabled in n8n webhook settings\n3. The webhook is returning a JSON response with a "message" field\n\nCheck the browser console for more details.`;
+      }
+      
+      const errorMessage: Message = {
+        id: (Date.now() + 1).toString(),
+        role: 'assistant',
+        content: errorContent,
+        timestamp: new Date(),
+      };
+
+      setMessages(prev => [...prev, errorMessage]);
+    } finally {
       setIsTyping(false);
-    }, 1000 + Math.random() * 1000);
+    }
   };
 
   const handleSampleQuery = (query: string) => {
@@ -172,7 +254,10 @@ const DemoAIChat = ({ isOpen, onClose, initialQuery }: DemoAIChatProps) => {
                         ? 'bg-gradient-to-r from-cyan-400 to-blue-500 text-white ml-auto' 
                         : 'bg-slate-800/60 backdrop-blur-xl border border-slate-700/50 text-gray-200'
                     }`}>
-                      <p className="text-sm whitespace-pre-wrap leading-relaxed">{message.content}</p>
+                      <MessageContent 
+                        content={message.content} 
+                        className="text-sm whitespace-pre-wrap leading-relaxed"
+                      />
                     </div>
                   </div>
                 </div>

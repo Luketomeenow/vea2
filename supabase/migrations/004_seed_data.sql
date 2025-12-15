@@ -75,3 +75,8 @@ COMMENT ON COLUMN invoices.currency IS 'Use ISO 4217 currency codes: USD, EUR, G
 
 
 
+
+
+
+
+

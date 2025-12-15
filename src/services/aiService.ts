@@ -2,6 +2,9 @@ import { supabase } from '@/lib/supabase';
 import { detectMediaRequest, generateImage, generateVideo, enhancePrompt, checkVideoStatus } from './kieService';
 import { AI_FUNCTIONS, executeFunctionCall } from './aiFunctionsService';
 
+// n8n AI Agent Webhook URL (Production)
+const N8N_WEBHOOK_URL = 'https://veaai.app.n8n.cloud/webhook/2cf27f74-6eb7-4bb4-94e9-c03388270e89';
+
 export interface ChatMessage {
   role: 'user' | 'assistant' | 'system';
   content: string;
@@ -137,30 +140,104 @@ Users can ask for images or videos and you'll handle it automatically.
 - Keep responses concise (under 200 words) unless detail is requested
 - Always prioritize using functions to provide real data over generic advice`;
 
-    // Handle Text Chat (default)
-    const { data, error } = await supabase.functions.invoke('chat', {
-      body: {
-        messages,
-        systemPrompt: enhancedSystemPrompt
-      }
+    // Handle Text Chat with n8n webhook (default)
+    // Generate or retrieve session ID
+    const sessionId = userId || `session-${Date.now()}`;
+    
+    // Get just the current user message (last message in the array)
+    const currentUserMessage = messages[messages.length - 1]?.content || '';
+    
+    console.log('🚀 Sending to n8n:', {
+      url: N8N_WEBHOOK_URL,
+      payload: { message: currentUserMessage, sessionId }
+    });
+    
+    // Create AbortController with 5 minute timeout for long-running n8n workflows
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 300000); // 5 minutes
+
+    const response = await fetch(N8N_WEBHOOK_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        message: currentUserMessage,
+        sessionId
+      }),
+      signal: controller.signal
     });
 
-    if (error) {
-      console.error('Edge Function Error:', error);
-      throw new Error(`AI service error: ${error.message || 'Connection failed'}`);
+    clearTimeout(timeoutId);
+
+    console.log('📡 n8n Response status:', response.status);
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('❌ n8n webhook error:', response.status, errorText);
+      throw new Error(`AI service error: ${response.statusText || 'Connection failed'}`);
     }
 
+    const data = await response.json();
+    console.log('✅ n8n Response data:', data);
+    console.log('✅ n8n Response type:', Array.isArray(data) ? 'Array' : typeof data);
+
     if (data?.error) {
-      console.error('Edge Function returned error:', data.error);
+      console.error('❌ n8n webhook returned error:', data.error);
       throw new Error(data.error);
     }
 
-    if (!data?.message) {
-      throw new Error('No response from AI service');
+    // Handle different response formats
+    let aiResponse = '';
+    let imageUrls: string[] = [];
+    
+    if (Array.isArray(data)) {
+      // If it's an array, try to extract the message
+      console.log('📦 Response is an array, extracting...');
+      const firstItem = data[0];
+      
+      // Check for images/files from Code Interpreter
+      if (firstItem?.images) {
+        imageUrls = Array.isArray(firstItem.images) ? firstItem.images : [firstItem.images];
+      } else if (firstItem?.files) {
+        imageUrls = Array.isArray(firstItem.files) ? firstItem.files : [firstItem.files];
+      }
+      
+      aiResponse = firstItem?.message || firstItem?.output || firstItem?.text || firstItem?.content || firstItem?.response;
+      
+      if (!aiResponse) {
+        console.error('❌ No recognized message field in array response:', data);
+        throw new Error('No response from AI service');
+      }
+    } else {
+      // Check for images/files in the response
+      if (data?.images) {
+        imageUrls = Array.isArray(data.images) ? data.images : [data.images];
+      } else if (data?.files) {
+        imageUrls = Array.isArray(data.files) ? data.files : [data.files];
+      }
+      
+      aiResponse = data?.message || data?.output || data?.text || data?.content;
+      
+      if (!aiResponse) {
+        console.error('❌ No message field in response:', data);
+        throw new Error('No response from AI service');
+      }
     }
 
+    // If there are images from Code Interpreter, append them to the response
+    if (imageUrls.length > 0) {
+      console.log('📊 Found Code Interpreter outputs:', imageUrls);
+      aiResponse += '\n\n';
+      imageUrls.forEach((url, index) => {
+        aiResponse += `![Generated Graph ${index + 1}](${url})\n`;
+      });
+    }
+
+    console.log('💬 Extracted message:', aiResponse);
+
     // Clean up the response - remove asterisks and format properly
-    let cleanContent = data.message
+    let cleanContent = aiResponse
       .replace(/\*\*/g, '') // Remove bold asterisks
       .replace(/\*/g, '');   // Remove italic asterisks
     
@@ -198,14 +275,30 @@ Users can ask for images or videos and you'll handle it automatically.
           { role: 'system' as const, content: `Function ${functionName} returned:\n${JSON.stringify(result.data, null, 2)}` }
         ];
         
-        const { data: finalResponse, error: finalError } = await supabase.functions.invoke('chat', {
-          body: {
-            messages: followUpMessages,
-            systemPrompt: 'Based on the function result, provide a helpful, conversational response to the user. Format the data nicely and highlight key insights.'
-          }
-        });
+        // Get the last message for follow-up
+        const followUpMessage = followUpMessages[followUpMessages.length - 1]?.content || '';
         
-        if (finalError || !finalResponse?.message) {
+        // Create AbortController with 5 minute timeout for follow-up requests
+        const followUpController = new AbortController();
+        const followUpTimeoutId = setTimeout(() => followUpController.abort(), 300000); // 5 minutes
+
+        const followUpResponse = await fetch(N8N_WEBHOOK_URL, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            message: followUpMessage,
+            sessionId
+          }),
+          signal: followUpController.signal
+        });
+
+        clearTimeout(followUpTimeoutId);
+        
+        const finalResponse = followUpResponse.ok ? await followUpResponse.json() : null;
+        
+        if (!followUpResponse.ok || !finalResponse?.message) {
           // Fallback: return raw data
           return {
             type: 'text',
@@ -232,6 +325,9 @@ Users can ask for images or videos and you'll handle it automatically.
     
   } catch (error: any) {
     console.error('AI Service Error:', error);
+    if (error.name === 'AbortError') {
+      throw new Error('Request timed out. The AI is taking longer than expected. Please try again or simplify your question.');
+    }
     throw new Error(error.message || 'Failed to get AI response. Please try again.');
   }
 };

@@ -491,3 +491,8 @@ ALTER TABLE activity_logs ENABLE ROW LEVEL SECURITY;
 
 
 
+
+
+
+
+

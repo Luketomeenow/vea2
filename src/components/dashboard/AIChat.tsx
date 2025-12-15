@@ -12,6 +12,7 @@ import { checkVideoStatus } from "@/services/kieService";
 import { uploadMediaFromUrl, generateMediaFileName } from "@/services/storageService";
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
+import { MessageContent } from "./MessageContent";
 
 interface Message {
   id: string;
@@ -732,7 +733,10 @@ export function AIChat({ initialQuery }: AIChatProps) {
                       ? 'bg-primary text-primary-foreground ml-auto' 
                       : 'bg-muted'
                   }`}>
-                    <p className="text-sm whitespace-pre-wrap">{message.content}</p>
+                    <MessageContent 
+                      content={message.content} 
+                      className="text-sm whitespace-pre-wrap"
+                    />
                     
                     {/* Progress indicator for generating media */}
                     {message.isGenerating && (
